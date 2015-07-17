@@ -15,27 +15,6 @@
 %% @author Lyle Bertz <lyleb551144@gmail.com>
 %% @copyright Copyright 2015 Lyle Bertz
 %%
-%% @doc Extensions of the ej module (http://github.com/set/ej) to provide
-%% support for JSON Merge Patch (RFC 7396) and JSON Patch (RFC 6902).
-%%
-%% @end
--module(e_alto).
-
-%% Application callbacks
--export([start/2, stop/1, init/0]).
-
-%% ===================================================================
-%% Application callbacks
-%% ===================================================================
-
-init() ->
-	ok.
-	
-
-start(_StartType, _StartArgs) ->
-    e_alto_sup:start_link().
-
-stop(_State) ->
-    ok.
-
-
+%% This is a generic header file for common macros and defaults.
+%% 
+-define(APPLICATIONNAME, e_alto).

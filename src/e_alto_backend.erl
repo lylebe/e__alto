@@ -23,6 +23,7 @@
 
 -define(ENTITYTBL, entitytable).
 -define(LATESTVSNTBL, latestvertable).
+-define(RESOURCETBL, resources).
 
 -export([ 
 	init/0, 
@@ -30,8 +31,118 @@
 	remove/2, 
 	store/2, 
 	store/3, 
-	get_latest_version/1 
+	get_latest_version/1,
+	set_resource_info/2,
+	get_resource_info/1,
+	delete_resource_info/1, 
+	find_resource_info/2,
+	set_resource_state/3
  ]).
+ 
+get_resource_type(ApplicationString) ->
+	MediaTypes = [ { "application/alto-networkmap+json", networkmap },
+				   { "application/alto-costmap+json", costmap },
+				   { "application/alto-directory+json", directory },
+				   { "application/alto-endpointprop+json", endpointprops },
+				   { "application/alto-endpointcost+json", endpointcosts },
+				   { "application/alto-networkmapfilter+json", filterednetworkmap },
+				   { "application/alto-costmapfilter+json", filteredcostmap }],
+	proplists:get_value(ApplicationString, MediaTypes). 
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Sets the Resource State (active, inactive, ...)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec set_resource_state(  URIPath :: string(),
+							MediaType :: string(),
+							State :: atom() ) ->	atom().
+ 
+set_resource_state(URIPath, MediaType, State) ->
+	_Resource = find_resource_info(URIPath, MediaType),
+	case length(_Resource) of
+		0 -> not_found;
+		1 -> 
+			_NewRec = erlang:setelement(3, lists:nth(1), State),
+			try
+				ets:insert(?RESOURCETBL, _NewRec)
+			catch
+				error:badarg ->
+					create_resource_table(),
+					ets:insert(?RESOURCETBL, _NewRec)
+			end
+	end.
+	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Gets the Resource Information based upon the URI Path and Media Type provided.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec find_resource_info( URIPath :: string(),
+							MediaType :: string() ) ->	[ any() ].
+ 
+find_resource_info(URIPath, MediaType) ->
+	_Type = get_resource_type(MediaType),
+	ets:match_object(?RESOURCETBL, { URIPath ++ atom_to_list(_Type), '_', '_', '_', '_', '_' }).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Sets the Resource Information
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec set_resource_info( ResourceId :: string(),
+		Info :: tuple() ) -> boolean().
+		
+set_resource_info(ResourceId, Info) ->	
+	set_resource_info(ResourceId, inactive, Info).
+		
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Sets the Resource Information
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec set_resource_info( ResourceId :: string(),
+		Status :: atom(),
+		Info :: tuple() ) -> boolean().
+		
+set_resource_info(ResourceId, Status, Info) ->
+	_Timestamp = os:system_time(),
+	%Extract URI Path
+	{ok,{_,_,_,_,_URIPath,_}} = http_uri:parse( ej:get({"uri"},Info) ),
+	%Get the ResourceType
+	ResourceType = get_resource_type( ej:get({"media-type"}, Info) ),
+	_Key = ResourceId ++ atom_to_list(ResourceType),
+	case ResourceType of 
+		undefined -> not_found;
+		_ ->
+		try
+			ets:insert(?RESOURCETBL, { _Key, ResourceId, Status, ResourceType, _URIPath, Info, _Timestamp })
+		catch
+			error:badarg ->
+				create_resource_table(),
+				ets:insert(?RESOURCETBL, { _Key, ResourceId, Status, ResourceType, _URIPath, Info, _Timestamp })
+		end
+	end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Retrieves the Resource Information
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec get_resource_info(ResourceId :: string()) -> { string(), string(), string(), string() }.
+
+get_resource_info(ResourceId) -> 
+	try
+		ets:lookup(?RESOURCETBL, ResourceId)
+	catch 
+		error:badarg ->
+			create_resource_table(),
+			not_found
+	end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Removes the Resource Item
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec delete_resource_info(ResourceId :: string()) -> atom().
+
+delete_resource_info(ResourceId) ->
+	try
+		ets:delete(?RESOURCETBL, ResourceId)
+	catch 
+		error:badarg ->
+			create_resource_table(),
+			not_found
+	end.	
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Intializes Table
@@ -40,13 +151,14 @@
 
 init() ->
 	create_entity_table(),
-	create_latest_version_table().
+	create_latest_version_table(),
+	create_resource_table().
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Retrieves Item
 %%%%%%%%%%%%%%%%%%%%%%%%
 -spec get_item(ResourceId :: string(),
-				Vtag :: string()) -> { string(), string(), string(), string(), string() }.
+				Vtag :: string()) -> [{ string(), string(), string(), string(), string() }].
 
 get_item(ResourceId, Vtag) ->
 	_Key = lists:concat([ResourceId, Vtag]), 
@@ -143,4 +255,11 @@ create_latest_version_table() ->
 		ets:new(?LATESTVSNTBL, [named_table, set, public])
 	catch
 		error:badarg -> latest_version_create_error
+	end.
+
+create_resource_table() ->
+	try
+		ets:new(?RESOURCETBL, [named_table, set, public])
+	catch
+		error:badarg -> resource_create_error
 	end.
