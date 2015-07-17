@@ -1,0 +1,12 @@
+{application, e_alto,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { e_alto, []}},
+  {env, []}
+ ]}.
