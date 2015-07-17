@@ -39,65 +39,63 @@ get_map() ->
 %% @doc Retrieves the latest version of the specified map.
 %%
 get_map(MapIdentifier) ->
-	{_, _, _, { _, Map, _ }, _ } = e_alto_backend:get_latest_version(MapIdentifier),
-	Map.
+	RetVal = e_alto_backend:get_lastest_version(MapIdentifier),
+	case length(Retval) of
+		{_, _, _, { _, Map, _ }, _ } -> Map;
+		_ -> not_found
+	end.
 
 %%
 %% @doc Get the specific version of the map
 %%
 get_map(MapIdentifier, Vtag) ->
-	{_, _, _, { _, Map, _ }, _ } = e_alto_backend:get_item(MapIdentifier, Vtag),
-	Map.
+	RetVal = e_alto_backend:get_item(MapIdentifier,Vtag),
+	case length(Retval) of
+		{_, _, _, { _, Map, _ }, _ } -> Map;
+		_ -> not_found
+	end.
 
 %%
 %% @doc Retrieves Pids based upon the JSON provided request.  
 %% 
 get_map_by_filter(MapIdentifier, InputParameters) ->
-	_NetworkMap = e_alto_backend:get_latest_version(MapIdentifier),
-	case length(_NetworkMap) of
-		0 -> not_found;
-		_ -> filter_map(lists:nth(1,_NetworkMap), InputParameters)
-	end.
+	filter_map( get_map(MapIdentifier), InputParameters ).
 
 %%
 %% @doc Retrieves Pids based upon the JSON provided request.  
 %% 
 get_map_by_filter(MapIdentifier, Vtag, InputParameters) ->
-	_NetworkMap = e_alto_backend:get_item(MapIdentifier, Vtag),
-	case length(_NetworkMap) of
-		0 -> not_found;
-		_ -> filter_map(lists:nth(1,_NetworkMap), InputParameters)
-
-	end.	
+	filter_map( get_map(MapIdentifier, Vtag), InputParameters ).	
 	
+filter_map(not_found, _) ->
+	not_found;
 filter_map(NetworkMap, InputParameters) ->
 	A = { struct, [{<<"meta">>, {struct, []}},	
-				   {<<"network-map">>, collect_pids( ej:get({<<"pids">>},InputParameters), 
+				   {<<"network-map">>, filter_pids( ej:get({<<"pids">>},InputParameters), 
 													 NetworkMap, 
-													 ej:get({<<"address-types">>},InputParameters), 
-													 []) }]},	
+													 ej:get({<<"address-types">>},InputParameters) 
+													 ) }]},	
 	ej:set({<<"meta">>,<<"vtag">>}, A, ej:get({<<"meta">>,<<"vtag">>},NetworkMap)).
 	
-collect_pids(undefined, _, _, _) ->
-	[];
-collect_pids([], _, _, AccIn) ->
+	
+filter_pids([], NetworkMap, AddressTypeFilter) ->
+	%No PIDs are to be filtered
+	{struct, _Pids} = ej:get({<<"network-map">>},NetworkMap),
+	{struct, utils:apply_attribute_filter_to_list(_Pids, AddressTypeFilter)};
+filter_pids(undefined, NewtorkMap, AddressTypeFilter) ->
+	%If the attribute is not present we merely treat it as an empty array
+	%(see case above).
+	filter_pids([], NetworkMap, AddressTypeFilter);
+filter_pids(PIDFilter, NetworkMap, AddressTypeFilter) 
+	{struct, filter_pids(PIDFilter, NetworkMap, AddressTypeFilter, [])}.
+	
+filter_pids([], _, _, AccIn) ->
 	AccIn;
-collect_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
+filter_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
 	case ej:get({<<"network-map">>,H},NetworkMap) of
-		undefined -> collect_pids(T, NetworkMap, AddressTypeFilter, AccIn);
+		undefined -> %When a PID is missing we keep processing
+			filter_pids(T, NetworkMap, AddressTypeFilter, AccIn);
 		Value ->
-			NewValue = {struct, filter_attributes(AddressTypeFilter, Value, [])},
-			collect_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
+			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value)},
+			filter_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
 	end. 
-
-filter_attributes(undefined, {struct, JSONObject}, _) ->
-	JSONObject;
-filter_attributes(undefined, JSONObject, _) ->
-	JSONObject;
-filter_attributes([], _, AccIn) ->
-	AccIn;
-filter_attributes([H|T], JSONObject, AccIn) ->
-	case ej:get({H},JSONObject) of
-		undefined -> filter_attributes(T, JSONObject, AccIn);
-		Value -> filter_attributes(T, JSONObject, ej:set({H},JSONObject,Value) )
-	end.

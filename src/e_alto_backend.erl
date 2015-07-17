@@ -163,7 +163,11 @@ init() ->
 get_item(ResourceId, Vtag) ->
 	_Key = lists:concat([ResourceId, Vtag]), 
 	try
-		ets:lookup(?ENTITYTBL, _Key)
+		RetVal = ets:lookup(?ENTITYTBL, _Key),
+		case length(RetVal) of
+			0 -> not_found;
+			_ -> lists:nth(1,Retval)
+		end
 	catch 
 		error:badarg ->
 			create_entity_table(),
@@ -231,8 +235,7 @@ get_latest_version(ResourceId) ->
 				not_found;
 			_ -> 
 				[ {_, Vtag, _} | _ ] = VersionValue,
-				_Key = lists:concat([ResourceId, Vtag]),
-				ets:lookup(?ENTITYTBL, _Key)				
+				get_item(ResourceId,Vtag)			
 		end
 	catch
 		error:badarg -> 
