@@ -166,7 +166,7 @@ get_item(ResourceId, Vtag) ->
 		RetVal = ets:lookup(?ENTITYTBL, _Key),
 		case length(RetVal) of
 			0 -> not_found;
-			_ -> lists:nth(1,Retval)
+			_ -> lists:nth(1,RetVal)
 		end
 	catch 
 		error:badarg ->

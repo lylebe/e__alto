@@ -39,7 +39,7 @@ get_map() ->
 %% @doc Retrieves the latest version of the specified map.
 %%
 get_map(MapIdentifier) ->
-	RetVal = e_alto_backend:get_lastest_version(MapIdentifier),
+	Retval = e_alto_backend:get_lastest_version(MapIdentifier),
 	case length(Retval) of
 		{_, _, _, { _, Map, _ }, _ } -> Map;
 		_ -> not_found
@@ -49,7 +49,7 @@ get_map(MapIdentifier) ->
 %% @doc Get the specific version of the map
 %%
 get_map(MapIdentifier, Vtag) ->
-	RetVal = e_alto_backend:get_item(MapIdentifier,Vtag),
+	Retval = e_alto_backend:get_item(MapIdentifier,Vtag),
 	case length(Retval) of
 		{_, _, _, { _, Map, _ }, _ } -> Map;
 		_ -> not_found
@@ -82,11 +82,11 @@ filter_pids([], NetworkMap, AddressTypeFilter) ->
 	%No PIDs are to be filtered
 	{struct, _Pids} = ej:get({<<"network-map">>},NetworkMap),
 	{struct, utils:apply_attribute_filter_to_list(_Pids, AddressTypeFilter)};
-filter_pids(undefined, NewtorkMap, AddressTypeFilter) ->
+filter_pids(undefined, NetworkMap, AddressTypeFilter) ->
 	%If the attribute is not present we merely treat it as an empty array
 	%(see case above).
 	filter_pids([], NetworkMap, AddressTypeFilter);
-filter_pids(PIDFilter, NetworkMap, AddressTypeFilter) 
+filter_pids(PIDFilter, NetworkMap, AddressTypeFilter) ->
 	{struct, filter_pids(PIDFilter, NetworkMap, AddressTypeFilter, [])}.
 	
 filter_pids([], _, _, AccIn) ->
@@ -96,6 +96,6 @@ filter_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
 		undefined -> %When a PID is missing we keep processing
 			filter_pids(T, NetworkMap, AddressTypeFilter, AccIn);
 		Value ->
-			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value)},
+			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value),
 			filter_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
 	end. 

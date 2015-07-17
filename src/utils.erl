@@ -35,7 +35,7 @@ apply_attribute_filter_to_list(JSONObjectList, undefined) ->
 apply_attribute_filter_to_list(JSONObjectList, []) ->
 	JSONObjectList;
 apply_attribute_filter_to_list(JSONObjectList, AttributeFilter) when is_list(AttributeFilter) ->
-	apply_attribute_filter_to_list(JSONObjectList, AttributeFilter, []);
+	apply_attribute_filter_to_list(JSONObjectList, AttributeFilter, []).
 
 %%
 %% List iteration that applies apply_attribute_filter to each element
@@ -59,7 +59,7 @@ apply_attribute_filter(Filter, {struct,L}=JSONObject) ->
 	{struct, apply_attribute_filter(Filter, [], JSONObject, []) };  
 apply_attribute_filter(Filter, {ObjectName,_}=JSONObject) -> 
 	%% Object is a named object so add that to the path in order to apply the filter
-	{ObjectName, {struct, apply_attribute_filter(Filter, [ObjectName], JSONObject, []}}.
+	{ObjectName, {struct, apply_attribute_filter(Filter, [ObjectName], JSONObject, [])}}.
 
 %%
 %% @doc Applies an attribute filter to a JSON Document using the 
@@ -77,6 +77,6 @@ apply_attribute_filter([], _, _, AccIn) ->
 	AccIn;
 apply_attribute_filter([H|T], BasePath, JSONObject, AccIn) ->
 	case ej:get(BasePath ++ [H],JSONObject) of
-		undefined -> filter_attributes(T, JSONObject, AccIn);
-		Value -> filter_attributes(T, JSONObject, ej:set({H},JSONObject,Value) )
+		undefined -> apply_attribute_filter(T, BasePath, JSONObject, AccIn);
+		Value -> apply_attribute_filter(T, BasePath, JSONObject, ej:set({H},JSONObject,Value) )
 	end.
