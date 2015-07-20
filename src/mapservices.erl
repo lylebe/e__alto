@@ -24,10 +24,72 @@
 		 get_map/1, 
 		 get_map/2, 
 		 get_map_by_filter/2, 
-		 get_map_by_filter/3
+		 get_map_by_filter/3,
+		 validate/1,
+		 set_map/2,
+		 map_test/0,
+		 is_schema_loaded/0,
+		 ets_table_exists/1,
+		 load_schema/0,
+		 validate_syntax/1,
+		 gen_path/0,
+		 gen_resource_entry/1,
+		 get_param/1,
+		 getIRD/0,
+		 set_default/1
 		]).
 
 -include("e_alto.hrl").
+
+map_test() ->
+	%e_alto_backend:init(),
+	%e_alto:load_application(),
+	lager:info("Application loaded",[]),
+	_DefMapName = get_param(defaultmap),	
+	_DefMapLoc = get_param(defaultmaploc),
+	_DefMapPath = get_param(defaultmappath),
+	%Parse the file
+	lager:info("Begin File Read",[]),
+	{ok, _File} = file:read_file(_DefMapLoc),
+	lager:info("Read complete - Starting Storage"),	
+	{ok, _ResourceId, X} = mapservices:set_map(_DefMapPath,_File),
+	set_default(_ResourceId),
+	lager:info("Set map exited",[]),
+	X.
+
+set_default(MapName) when is_list(MapName) ->
+	set_default( list_to_binary(MapName) );
+set_default(MapName) when is_binary(MapName) ->
+	updateIRD( ej:set({"meta","default-alto-network-map"}, getIRD(), MapName)).
+
+gen_resource_entry(Path) when is_binary(Path) ->
+	gen_resource_entry(binary_to_list(Path));	
+gen_resource_entry(Path) when is_list(Path) ->
+	_HostBase = get_param(hostbase),
+	A = "{\"foo\" : {\n\t\"uri\" : \"" ++ _HostBase ++ "/" ++ Path ++ "\",\n\t\"media-type\" : \"application/alto-networkmap+json\"}}",
+	B = mochijson2:decode(A),
+	ej:get({<<"foo">>},B).
+
+set_map(Path,JSON) ->
+	case validate(JSON) of
+		{ok, Map, ApplicationState} ->
+			%%Get the ResourceId and tag
+			_ResourceId = ej:get({"meta","vtag","resource-id"},Map),
+			_Tag = ej:get({"meta","vtag","tag"},Map),
+			X = updateResource(_ResourceId, _Tag, map, Map, ApplicationState),
+			%Step 2 - update IRD
+			_ResourceEntry = gen_resource_entry(Path),
+			updateIRD( ej:set({"resources",_ResourceId}, getIRD(), 
+							_ResourceEntry) ),
+			%Step 3 - Add URI Mapping to Registry
+			lager:info("Path is ~p for ~p",[ej:get({<<"uri">>},_ResourceEntry),_ResourceEntry]),
+			_Path = registry:extract_path(ej:get({<<"uri">>},_ResourceEntry)),
+			lager:info("HTTP URI is ~p for Resource ~p",[_Path,_ResourceId]),
+			registry:add_uri_mapping(_Path,_ResourceId),
+			{ok, _ResourceId, X};
+		Error ->
+			Error
+	end.
 
 %%
 %% @doc Retrieves the current version of the default map
@@ -39,21 +101,13 @@ get_map() ->
 %% @doc Retrieves the latest version of the specified map.
 %%
 get_map(MapIdentifier) ->
-	Retval = e_alto_backend:get_lastest_version(MapIdentifier),
-	case length(Retval) of
-		{_, _, _, { _, Map, _ }, _ } -> Map;
-		_ -> not_found
-	end.
+	registry:get_resource(MapIdentifier).
 
 %%
 %% @doc Get the specific version of the map
 %%
 get_map(MapIdentifier, Vtag) ->
-	Retval = e_alto_backend:get_item(MapIdentifier,Vtag),
-	case length(Retval) of
-		{_, _, _, { _, Map, _ }, _ } -> Map;
-		_ -> not_found
-	end.
+	registry:get_resource(MapIdentifier,Vtag).
 
 %%
 %% @doc Retrieves Pids based upon the JSON provided request.  
@@ -99,3 +153,84 @@ filter_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
 			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value),
 			filter_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
 	end. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Network Map Validation Support Functions	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+add_routes(undefined,_,AccIn) ->
+	AccIn;
+add_routes([],_,AccIn) ->
+	AccIn;
+add_routes([H|T],PidName,AccIn) ->
+	add_routes(T,PidName,[{H,PidName}]++AccIn).
+
+%% TODO - Process IPv6 for duplicate detection
+pidroutes_tolist([], AccIn, AccTreeIn, Duplicates) ->
+	{ AccIn, AccTreeIn, Duplicates };
+pidroutes_tolist([{PidName,Attributes} | Tail], AccIn, AccTreeIn, Duplicates) ->
+	_v4Routes = add_routes(ej:get({<<"ipv4">>}, Attributes),PidName,[]),
+	{ NewTree1, NewDuplicates } = route_utils:insert_route_interval(_v4Routes, AccTreeIn, Duplicates),
+	_v6Routes = add_routes(ej:get({<<"ipv6">>}, Attributes),PidName,[]),
+	pidroutes_tolist(Tail, _v6Routes ++ _v4Routes ++ AccIn, NewTree1, NewDuplicates).	
+
+validate(JSON) ->
+	case weak_validate_syntax(JSON) of
+		{ok, Body} -> 
+			lager:info("Map passed weak validation test",[]),
+			_Res = validate_semantics(Body),
+			lager:info("Will return ~p for syntax validation",[_Res]),
+			_Res;
+		SomethingElse -> 
+			lager:info("Map did not pass weak validation check",[]),
+			SomethingElse
+	end.
+
+%% TODO - Build IPv6 trie seperately from IPv4 trie
+%Validates and Builds Map Data	
+validate_semantics(NetworkMap) ->
+	%%Ensure the tag is set
+	case ej:get({"meta","vtag","resource-id"},NetworkMap) of
+		undefined ->
+			lager:info("No resource-id found",[]);
+		_ ->
+			ok
+	end,
+	
+	case ej:get({"meta","vtag","tag"},NetworkMap) of
+		undefined -> 
+			lager:info("No tag found",[]);
+		_->
+			ok
+	end,
+
+	% We are looking for anwhere there is an overlap of routes that is not a containment
+	{struct, _Pids } = ej:get({<<"network-map">>}, NetworkMap),
+	
+	%Build the Route Structures for the condition checks
+	% Condition 1 - same route in two locations - how to resolve - Duplicate detection
+	% for insertion of the same key in a gb_tree.
+	{ PidRoutesList, PidRoutesTree, Duplicates } = pidroutes_tolist(_Pids,[], gb_trees:empty(),[]),
+	
+	case length(Duplicates) of
+		0 -> lager:info("No exact duplicates found");
+		_ -> lager:info("Duplicates found - ~p", Duplicates)
+	end,
+	
+	% Condition 2 - partially overlapping routes (not an interval) - Interval Tree is used
+	% Convert RB tree (gb_tree) to interval tree
+	{_,IntervalTree} = route_utils:set_max_value(PidRoutesTree, PidRoutesTree),
+	Overlaps = route_utils:detect_overlaps(IntervalTree), 
+	case length(Overlaps) of
+		0 -> lager:info("No CIDR overlaps found");
+		_ -> lager:info("CIDR overlaps found - ~p", Overlaps)
+	end,	
+	
+    % Last Task is to build a trie that can perform longest common subsquence of the route data	
+    case ((length(Duplicates)>0) or (length(Overlaps)>0)) of
+		false -> % build the prefix tree...
+			lager:info("Building NetworkMap Trie for Routing",[]),
+		    {ok, NetworkMap, route_utils:build_bitstring_trie( PidRoutesList, trie:new() )};
+		true ->
+			lager:info("Semantic violation - error will be returned",[]),
+			{error, 422, "422-4 Semantic Violation - Map did not pass semantic formats"}
+    end.

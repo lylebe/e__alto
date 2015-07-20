@@ -28,6 +28,7 @@
 -export([ 
 	init/0, 
 	get_item/2, 
+	get_item_versions/1,
 	remove/2, 
 	store/2, 
 	store/3, 
@@ -36,7 +37,8 @@
 	get_resource_info/1,
 	delete_resource_info/1, 
 	find_resource_info/2,
-	set_resource_state/3
+	set_resource_state/3,
+	refresh_latest_version/1
  ]).
  
 get_resource_type(ApplicationString) ->
@@ -97,13 +99,14 @@ set_resource_info(ResourceId, Info) ->
 		Status :: atom(),
 		Info :: tuple() ) -> boolean().
 		
-set_resource_info(ResourceId, Status, Info) ->
-	_Timestamp = os:system_time(),
+set_resource_info(ResourceId, Status, Info) when is_binary(ResourceId) ->
+	_Timestamp = list_to_binary( io_lib:format("~p~p~p", tuple_to_list(erlang:now()) )),
 	%Extract URI Path
 	{ok,{_,_,_,_,_URIPath,_}} = http_uri:parse( ej:get({"uri"},Info) ),
 	%Get the ResourceType
 	ResourceType = get_resource_type( ej:get({"media-type"}, Info) ),
-	_Key = ResourceId ++ atom_to_list(ResourceType),
+	_X = list_to_binary(atom_to_list(ResourceType)),
+	_Key = <<ResourceId/binary, _X/binary>>,
 	case ResourceType of 
 		undefined -> not_found;
 		_ ->
@@ -154,14 +157,29 @@ init() ->
 	create_latest_version_table(),
 	create_resource_table().
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Retrieve All Versions of an Item
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec get_item_versions(ResourceId :: string()) -> 
+	[{ string(), string(), string(), string(), string() }].
+
+get_item_versions(ResourceId) -> 
+	try
+		ets:match_object(?ENTITYTBL, {'_', ResourceId, '_', '_', '_'})
+	catch 
+		error:badarg ->
+			create_entity_table(),
+			not_found
+	end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Retrieves Item
 %%%%%%%%%%%%%%%%%%%%%%%%
 -spec get_item(ResourceId :: string(),
 				Vtag :: string()) -> [{ string(), string(), string(), string(), string() }].
 
-get_item(ResourceId, Vtag) ->
-	_Key = lists:concat([ResourceId, Vtag]), 
+get_item(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
+	_Key = <<ResourceId/bitstring, Vtag/bitstring>>, 
 	try
 		RetVal = ets:lookup(?ENTITYTBL, _Key),
 		case length(RetVal) of
@@ -180,8 +198,8 @@ get_item(ResourceId, Vtag) ->
 -spec remove(ResourceId :: string(),
 				Vtag :: string()) -> atom().
 
-remove(ResourceId, Vtag) ->
-	_Key = lists:concat([ResourceId, Vtag]),
+remove(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
+	_Key = <<ResourceId/bitstring, Vtag/bitstring>>,
 	try
 		ets:delete(?ENTITYTBL, _Key)
 	catch 
@@ -197,18 +215,18 @@ remove(ResourceId, Vtag) ->
 			 Data :: string() ) -> boolean().
 
 store(ResourceId, Data) ->	
-	store(ResourceId, uuid:new(os:getpid(), 'erlang'), Data).
+	store(ResourceId, integer_to_binary(uuid:get_v1_time()) , Data).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Stores Item (with vtag)
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 -spec store( ResourceId :: string(),
 			 Vtag :: string(),
-			 Data :: string() ) -> boolean().
+			 Data :: any() ) -> boolean().
 
-store(ResourceId, Vtag, Data) ->
-	_Key = list:concat([ResourceId, Vtag]),
-	_Timestamp = os:system_time(),
+store(ResourceId, Vtag, Data) when is_binary(ResourceId) andalso is_binary(Vtag) ->
+	_Key = <<ResourceId/bitstring, Vtag/bitstring>>,
+	_Timestamp = list_to_binary( io_lib:format("~p~p~p", tuple_to_list(erlang:now()) )),
 	try
 		ets:insert(?ENTITYTBL, {_Key, ResourceId, Vtag, Data, _Timestamp }),
 		ets:insert(?LATESTVSNTBL, {ResourceId, Vtag, _Timestamp})
@@ -242,10 +260,31 @@ get_latest_version(ResourceId) ->
 			create_entity_table(),
 			create_latest_version_table()
 	end.			
+	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Finds the latest version and sets it
+%% Usually peformed after a delete
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+refresh_latest_version(ResourceId) ->	
+	try
+		_Results = ets:match({'_', ResourceId, '$1', '_', '$2' }),
+		case length(_Results) of
+			0 ->  %%Erase 
+				ets:delete(?LATESTVSNTBL, ResourceId);
+			_ ->
+				_Sorted = lists:keysort(2,_Results),
+				{_LatestVtag, _LatestTimestamp} = lists:last(_Results),
+				ets:insert(?LATESTVSNTBL, {ResourceId, _LatestVtag, _LatestTimestamp})	
+		end
+	catch
+		error:badarg -> 
+			create_entity_table(),
+			create_latest_version_table()
+	end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ETS Table Creation - Private Function
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 create_entity_table() ->
 	try
 		ets:new(?ENTITYTBL, [named_table, set, public])

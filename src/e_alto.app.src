@@ -1,11 +1,18 @@
 {application, e_alto,
  [
   {description, ""},
-  {vsn, "1"},
+  {vsn, "0.1.0"},
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  ranch,
+                  crypto,
+                  cowlib,
+                  cowboy,
+                  compiler,
+                  lager,
+				  syntax_tools
                  ]},
   {mod, { e_alto, []}},
   {env, []}
