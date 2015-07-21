@@ -46,7 +46,9 @@ init() ->
 	lists:foreach(fun load_app/1, AppList),
 	application:load(e_alto),
 	e_alto_backend:init(),
-	load_defaults().
+	{Path,_}=mapservices:load_default_map(),
+	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
+	e_alto_backend:set_constant(<<"routelist">>,[{map,Path},{ird,"/"}]).
 
 load_app(App) ->
 	 case application:start(App) of 
@@ -60,9 +62,8 @@ start() ->
 	ok.
 
 start(_StartType, _StartArgs) ->
-    Dispatch = cowboy_router:compile([
-        {'_', [{"/", alto_handler, []}]}
-    ]),
+    {_, DefaultRoute} = e_alto_backend:get_constant(<<"routelist">>),
+    Dispatch = compileRouteList(DefaultRoute),
     {ok, _} = cowboy:start_http(alto_handler, 100, [{port, 8080}],
         [{env, [{dispatch, Dispatch}]}]
     ),
@@ -73,16 +74,42 @@ stop(_State) ->
     ok.
 
 load_defaults() ->
-	lager:info("Loading Default Map",[]),
-	_DefMapName = get_param(defaultmap),	
-	_DefMapLoc = get_param(defaultmaploc),
-	_DefMapPath = get_param(defaultmappath),
-	%Parse the file
-	lager:info("Begin File Read",[]),
-	{ok, _File} = file:read_file(_DefMapLoc),
-	lager:info("Read complete - Starting Storage"),	
-	{ok, _ResourceId, X} = mapservices:set_map(_DefMapPath,_File),
-	mapservices:set_default(_ResourceId),
-	lager:info("Set map exited",[]),
-	X.
+	mapservices:load_default_map().
 
+add_route(AppType,Route) ->
+	process_route(AppType,Route,fun(AppTypeA,RouteA,List) ->  [{AppTypeA,RouteA}] ++ List end).
+
+remove_route(AppType,Route) ->
+	process_route(AppType,Route,fun(_,RouteA,List) -> lists:keytake(RouteA,2,List) end).
+
+process_route(AppType,Route,E) when is_binary(Route) ->
+	process_route(AppType,binary_to_list(Route),E);
+process_route(AppType,Route,E) when is_list(Route) ->
+	CurrentRouteList = e_alto_backend:get_constant(<<"routelist">>),
+	NewList =  E(AppType,Route,CurrentRouteList),
+	apply_route_changes(NewList).
+
+reload_routes() ->
+	{_, Routes} = registry:get_constant(<<"routelist">>),
+	apply_route_changes(Routes).
+	
+apply_route_changes(List) ->	
+	registry:set_constant(<<"routelist">>,List),
+	CompiledRoutes = compileRouteList(List),
+	cowboy:set_env(alto_handler, dispatch, CompiledRoutes).
+
+compileRouteList(List) ->
+	Routes = {'_', lists:foldl(fun({AppType,Path},AccIn) -> 
+									GoodPath = case is_binary(Path) of
+										false -> Path;
+										true -> binary_to_list(Path)
+									end,
+									Handler = case AppType of 
+										map -> map_services;
+										ird -> ird_services;
+										_ -> throw({error,unknown_apptype})
+									end,
+									[ {GoodPath, Handler, []} ] ++ AccIn
+								end,
+								[], List) },
+	cowboy_router:compile([ Routes ]).

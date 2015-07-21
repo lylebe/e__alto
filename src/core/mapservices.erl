@@ -27,7 +27,7 @@
 		 get_map_by_filter/3,
 		 validate/1,
 		 set_map/2,
-		 map_test/0,
+		 load_default_map/0,
 		 is_schema_loaded/0,
 		 ets_table_exists/1,
 		 load_schema/0,
@@ -39,28 +39,27 @@
 		 set_default/1
 		]).
 
+-define(DEFMAPKEY, <<"defaultmap">>).
+
 -include("e_alto.hrl").
 
-map_test() ->
-	%e_alto_backend:init(),
-	%e_alto:load_application(),
-	lager:info("Application loaded",[]),
-	_DefMapName = get_param(defaultmap),	
+load_default_map() ->
+	lager:info("~p--Load Default Map--Starting Load",[?MODULE]),
 	_DefMapLoc = get_param(defaultmaploc),
 	_DefMapPath = get_param(defaultmappath),
-	%Parse the file
-	lager:info("Begin File Read",[]),
+	lager:info("~p--Load Default Map--Begin File Read",[?MODULE]),
 	{ok, _File} = file:read_file(_DefMapLoc),
-	lager:info("Read complete - Starting Storage"),	
-	{ok, _ResourceId, X} = mapservices:set_map(_DefMapPath,_File),
+	lager:info("~p--Load Default Map--Read complete - Starting Storage",[?MODULE]),	
+	{ok, _ResourceId, X} = mapservices:set_map( string:sub_string(_DefMapPath,2),_File),
 	set_default(_ResourceId),
-	lager:info("Set map exited",[]),
-	X.
+	lager:info("~p--Load Default Map--Completed",[?MODULE]),
+	{_DefMapPath, X}.
 
 set_default(MapName) when is_list(MapName) ->
 	set_default( list_to_binary(MapName) );
 set_default(MapName) when is_binary(MapName) ->
-	updateIRD( ej:set({"meta","default-alto-network-map"}, getIRD(), MapName)).
+	updateIRD( ej:set({"meta","default-alto-network-map"}, getIRD(), MapName)),
+	e_alto_backend:set_constant(?DEFMAPKEY,MapName). 
 
 gen_resource_entry(Path) when is_binary(Path) ->
 	gen_resource_entry(binary_to_list(Path));	
@@ -95,7 +94,10 @@ set_map(Path,JSON) ->
 %% @doc Retrieves the current version of the default map
 %%
 get_map() ->
-	get_map( application:get_env(?APPLICATIONNAME, defaultmap, "") ).
+	case e_alto_backend:get_constant(?DEFMAPKEY) of 
+		{_,ResourceId} -> get_map(ResourceId);
+		_ -> not_found
+	end.
 
 %%
 %% @doc Retrieves the latest version of the specified map.

@@ -43,7 +43,8 @@
 %% 
 -module(registry).
 
--define(URIMAPTBL, costmapsurimap). 
+-define(URIMAPTBL, urimaptable). 
+-define(COMMONTBLOPTS, [named_table, set, public]).
  
 -export([init/0,
 
@@ -65,8 +66,8 @@
 		 show_registry/0,
 
 		 add_uri_mapping/2,		
-		 remove_uri_mapping/2,
-		 get_id_for_path/1
+		 remove_uri_mapping/1,
+		 get_resourceid_for_path/1
 ]).
 
 %%
@@ -75,6 +76,9 @@
 init() ->
 	urimap_table_init().
 
+%%
+%% @doc Retrieves the IRD.
+%%
 getIRD() ->
 	case registry:get_resource(<<"IRD">>) of
 		not_found -> %Initialize IRD;
@@ -83,9 +87,15 @@ getIRD() ->
 		Value -> Value
 	end.
 
+%%
+%% @doc Replaces the IRD with the new IRD.
+%%
 updateIRD(IRD) ->
 	e_alto_backend:store(<<"IRD">>,{directory, IRD, undefined}).
 
+%%
+%% @doc Determines if a resource is in the IRD.
+%%
 in_ird(Name) ->
 	IRD = getIRD(),
 	case ej:get({"resources",Name},IRD) of
@@ -93,7 +103,9 @@ in_ird(Name) ->
 		_ -> true
 	end.
 
-	
+%%
+%% @doc Extracts a path from a URI.
+%%
 extract_path(URI) when is_binary(URI) ->
 	extract_path(binary_to_list(URI));
 extract_path(URI) ->
@@ -105,7 +117,6 @@ extract_path(URI) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Basic Read / Query Operations
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 %%
 %% @doc Retrieves the latest version of the specified Cost Map.
 %%
@@ -113,7 +124,7 @@ get_resource(ResourceId) ->
 	get_resource(ResourceId, undefined).
 
 %%
-%% @doc Get the specific version of the map
+%% @doc Get the specific version of the resource
 %%
 get_resource(ResourceId, Vtag) ->
 	Retval = case Vtag of 
@@ -128,69 +139,53 @@ get_resource(ResourceId, Vtag) ->
 	end.	
 	
 %%
-%% @doc Gets a CostMap by retrieving the URI Path and Tag
+%% @doc Gets a Resource by retrieving the URI Path and Tag
 %%
 get_resource_by_path(URI, Tag) ->
-	try 
-		_Retval = ets:lookup(?URIMAPTBL,URI),
-		case length(_Retval) of
-			0 -> not_found;
-			_ -> get_resource(lists:nth(1,_Retval), Tag)
-		end
-	catch
-		error:badarg -> 
-			case ets_table_exists(?URIMAPTBL) of
-				false ->
-					urimap_table_init(),
-					not_found;
-				true ->
-					internal_error
-			end
+	case get_resourceid_for_path(URI) of
+		not_found -> not_found;
+		ResourceId -> get_resource(ResourceId,Tag)
 	end.
 	
 %%
-%% @doc Gets a CostMap by retrieving the URI Path
+%% @doc Gets a Resource by retrieving the URI Path
 %%
 get_resource_by_path(URI) ->
 	get_resource_by_path(URI, undefined).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Registration Functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
 		
 %% 
 %% @doc Determines if a path is registered
 %%
 is_registered(PathURI) ->
-	case get_id_for_path(PathURI) of
-		not_found -> false;
-		_ -> true
-	end.
+	etscommon:has(?URIMAPTBL,?COMMONTBLOPTS,PathURI).
 
 %% 
 %% @doc Gets the Resource ID associated with a path
 %%
-get_id_for_path(PathURI) ->
-	try 
-		_Retval = ets:lookup(?URIMAPTBL, PathURI),
-		case length(_Retval) of
-			0 -> not_found;
-			_ -> lists:nth(1,_Retval)
-		end
-	catch
-		error:badarg -> urimap_table_init()
-	end.
+get_resourceid_for_path(PathURI) ->
+	etscommon:get_value(?URIMAPTBL,?COMMONTBLOPTS,PathURI).
 
-%%%%%%%%%%%%%%%%%%%%%
-%% Registration
-%%%%%%%%%%%%%%%%%%%%%
+%%
+%% @doc Adds a mapping URI => Resource to the Registry table.
+%%
+add_uri_mapping(K,V) when is_list(K) ->
+	add_uri_mapping(list_to_binary(K),V);
 add_uri_mapping(K,V) ->
-	try
-		ets:insert(?URIMAPTBL, {K,V})
-	catch error:badarg -> 
-		urimap_table_init(),
-		ets:insert(?URIMAPTBL, {K,V})
-	end.
-		
+	etscommon:set(?URIMAPTBL,?COMMONTBLOPTS,K,V).
+
+%%
+%% @doc Deregisters the Reosource from the URI table.
+%%	
 deregister_mapping(ResourcePath) ->
-	deregister(get_id_for_path(ResourcePath)).
-	
+	deregister(get_resourceid_for_path(ResourcePath)).
+
+%%
+%% @doc Deregisters the Value in the URI table.
+%%	
 deregister(K) ->
 	try 
 		URIs = ets:match(?URIMAPTBL, {'$1', K}),
@@ -198,7 +193,10 @@ deregister(K) ->
 	catch error:badarg ->
 		urimap_table_init()
 	end.
-	
+
+%%	
+%% @doc Lists all URIs in the URI registry.
+%%	
 show_registry() ->
 	try
 		ets:tab2list(?URIMAPTBL)
@@ -207,32 +205,15 @@ show_registry() ->
 		[]
 	end.
 	
-remove_uri_mapping(K,V) ->
-	try
-		ets:delete(?URIMAPTBL,{K,V})
-	catch error:badarg ->
-		urimap_table_init()
-	end.
+%%
+%% @doc Removes a specific URI Mapping
+%%	
+remove_uri_mapping(K) -> 
+	etscommon:delete(?URIMAPTBL,?COMMONTBLOPTS,K).
 	
 %%
 %% Internal Function that creates the ETS table for holing URI path to 
 %% ResourceID mappings
 %%
 urimap_table_init() ->
-	try
-		case ets_table_exists(?URIMAPTBL) of
-			false -> ets:new(?URIMAPTBL, [named_table, set, public]);
-			true -> {error,already_created}
-		end
-	catch
-		error:badarg -> table_create_error
-	end.
-
-%%
-%% Determines if the table in question exists in ETS
-%%
-ets_table_exists(TableName) ->
-  case ets:info(TableName) of
-    undefined -> false;
-    _ -> true
-end.
+	etscommon:init_table(?URIMAPTBL,?COMMONTBLOPTS).

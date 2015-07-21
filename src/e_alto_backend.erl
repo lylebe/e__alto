@@ -24,6 +24,8 @@
 -define(ENTITYTBL, entitytable).
 -define(LATESTVSNTBL, latestvertable).
 -define(RESOURCETBL, resources).
+-define(CONSTTBL, constants).
+-define(COMMONTBLOPTS, [named_table, set, public]).
 
 -export([ 
 	init/0, 
@@ -38,8 +40,27 @@
 	delete_resource_info/1, 
 	find_resource_info/2,
 	set_resource_state/3,
-	refresh_latest_version/1
+	refresh_latest_version/1,
+	
+	set_constant/2,
+	get_constant/1,
+	delete_constant/1
  ]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%% Intializes Tables
+%%%%%%%%%%%%%%%%%%%%%%%%
+-spec init() -> term().
+
+init() ->
+	create_constant_table(),
+	create_entity_table(),
+	create_latest_version_table(),
+	create_resource_table().
+
+set_constant(K,V) -> etscommon:set(?CONSTTBL,?COMMONTBLOPTS,K,V).
+get_constant(K) -> etscommon:get_value(?CONSTTBL,?COMMONTBLOPTS,K).
+delete_constant(K) -> etscommon:delete(?CONSTTBL,?COMMONTBLOPTS,K).
  
 get_resource_type(ApplicationString) ->
 	MediaTypes = [ { "application/alto-networkmap+json", networkmap },
@@ -125,13 +146,7 @@ set_resource_info(ResourceId, Status, Info) when is_binary(ResourceId) ->
 -spec get_resource_info(ResourceId :: string()) -> { string(), string(), string(), string() }.
 
 get_resource_info(ResourceId) -> 
-	try
-		ets:lookup(?RESOURCETBL, ResourceId)
-	catch 
-		error:badarg ->
-			create_resource_table(),
-			not_found
-	end.
+	etscommon:get_value(?RESOURCETBL,?COMMONTBLOPTS,ResourceId).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Removes the Resource Item
@@ -139,23 +154,7 @@ get_resource_info(ResourceId) ->
 -spec delete_resource_info(ResourceId :: string()) -> atom().
 
 delete_resource_info(ResourceId) ->
-	try
-		ets:delete(?RESOURCETBL, ResourceId)
-	catch 
-		error:badarg ->
-			create_resource_table(),
-			not_found
-	end.	
-
-%%%%%%%%%%%%%%%%%%%%%%%%
-%% Intializes Table
-%%%%%%%%%%%%%%%%%%%%%%%%
--spec init() -> term().
-
-init() ->
-	create_entity_table(),
-	create_latest_version_table(),
-	create_resource_table().
+	etscommon:delete(?RESOURCETBL,?COMMONTBLOPTS,ResourceId).	
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Retrieve All Versions of an Item
@@ -180,17 +179,7 @@ get_item_versions(ResourceId) ->
 
 get_item(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
 	_Key = <<ResourceId/bitstring, Vtag/bitstring>>, 
-	try
-		RetVal = ets:lookup(?ENTITYTBL, _Key),
-		case length(RetVal) of
-			0 -> not_found;
-			_ -> lists:nth(1,RetVal)
-		end
-	catch 
-		error:badarg ->
-			create_entity_table(),
-			not_found
-	end.
+	etscommon:get_value(?ENTITYTBL,?COMMONTBLOPTS,_Key).
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Removes Item
@@ -200,13 +189,7 @@ get_item(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
 
 remove(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
 	_Key = <<ResourceId/bitstring, Vtag/bitstring>>,
-	try
-		ets:delete(?ENTITYTBL, _Key)
-	catch 
-		error:badarg ->
-			create_entity_table(),
-			not_found
-	end.	
+	etscommon:delete(?ENTITYTBL,?COMMONTBLOPTS,_Key).
 
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Stores Item
@@ -283,25 +266,9 @@ refresh_latest_version(ResourceId) ->
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% ETS Table Creation - Private Function
+%% ETS Table Creation - Private Functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-create_entity_table() ->
-	try
-		ets:new(?ENTITYTBL, [named_table, set, public])
-	catch
-		error:badarg -> entity_table_create_error
-	end.
-	
-create_latest_version_table() ->
-	try
-		ets:new(?LATESTVSNTBL, [named_table, set, public])
-	catch
-		error:badarg -> latest_version_create_error
-	end.
-
-create_resource_table() ->
-	try
-		ets:new(?RESOURCETBL, [named_table, set, public])
-	catch
-		error:badarg -> resource_create_error
-	end.
+create_constant_table() -> etscommon:table_init(?CONSTTBL,?COMMONTBLOPTS).
+create_entity_table() -> etscommon:table_init(?ENTITYTBL,?COMMONTBLOPTS).
+create_latest_version_table() -> etscommon:table_init(?LATESTVSNTBL,?COMMONTBLOPTS).
+create_resource_table() -> etscommon:table_init(?RESOURCETBL,?COMMONTBLOPTS).
