@@ -40,8 +40,7 @@
 	delete_resource_info/1, 
 	find_resource_info/2,
 	set_resource_state/3,
-	refresh_latest_version/1,
-	
+	refresh_latest_version/1,	
 	set_constant/2,
 	get_constant/1,
 	delete_constant/1

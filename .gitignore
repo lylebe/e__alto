@@ -4,4 +4,6 @@ rebar
 *.beam
 doc
 ebin
+log/
+erl_crash*
 deps/

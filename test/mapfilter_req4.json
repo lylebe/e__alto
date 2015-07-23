@@ -1,0 +1,4 @@
+{
+ "pids": [ "peer1.pid", "default.pid", "mine.pid", "mine1a.pid" ],
+ "address-types" : [ "ipv4" ]
+}

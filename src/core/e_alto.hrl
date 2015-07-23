@@ -105,9 +105,11 @@ weak_validate_syntax(Body) when is_list(Body) ->
 	% STEP - Validate against ALTO Schema
 	try 
 	  ParsedBody = mochijson2:decode(Body),
+	  lager:info("Request is valid JSON - Passes Weak Validation Test",[]),
 	  {ok, ParsedBody}
 	catch 
 		error ->
+			lager:info("Invalid JSON Found",[]),
 			{error, 422, "422-1 Operation result create invalid JSON"}
 	end.
 

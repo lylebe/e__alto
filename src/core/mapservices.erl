@@ -24,7 +24,6 @@
 		 get_map/1, 
 		 get_map/2, 
 		 get_map_by_filter/2, 
-		 get_map_by_filter/3,
 		 validate/1,
 		 set_map/2,
 		 load_default_map/0,
@@ -36,7 +35,9 @@
 		 gen_resource_entry/1,
 		 get_param/1,
 		 getIRD/0,
-		 set_default/1
+		 set_default/1,
+		 is_valid_filter/1,
+		 filter_map/2
 		]).
 
 -define(DEFMAPKEY, <<"defaultmap">>).
@@ -116,28 +117,31 @@ get_map(MapIdentifier, Vtag) ->
 %% 
 get_map_by_filter(MapIdentifier, InputParameters) ->
 	filter_map( get_map(MapIdentifier), InputParameters ).
-
-%%
-%% @doc Retrieves Pids based upon the JSON provided request.  
-%% 
-get_map_by_filter(MapIdentifier, Vtag, InputParameters) ->
-	filter_map( get_map(MapIdentifier, Vtag), InputParameters ).	
+	
 	
 filter_map(not_found, _) ->
 	not_found;
 filter_map(NetworkMap, InputParameters) ->
+	Z = ej:get({<<"pids">>},InputParameters),
+	Y = ej:get({<<"address-types">>},InputParameters),
+	lager:info("Input Parameters are ~p and ~p",[Z,Y]),
 	A = { struct, [{<<"meta">>, {struct, []}},	
 				   {<<"network-map">>, filter_pids( ej:get({<<"pids">>},InputParameters), 
 													 NetworkMap, 
 													 ej:get({<<"address-types">>},InputParameters) 
 													 ) }]},	
 	ej:set({<<"meta">>,<<"vtag">>}, A, ej:get({<<"meta">>,<<"vtag">>},NetworkMap)).
-	
-	
+
+filter_pids(undefined, NetworkMap, []) ->
+	NetworkMap;
+filter_pids([], NetworkMap, []) ->
+	NetworkMap;
+filter_pids([], NetworkMap, undefined) ->	
+	NetworkMap;
 filter_pids([], NetworkMap, AddressTypeFilter) ->
 	%No PIDs are to be filtered
-	{struct, _Pids} = ej:get({<<"network-map">>},NetworkMap),
-	{struct, utils:apply_attribute_filter_to_list(_Pids, AddressTypeFilter)};
+	{struct,_Pids} = ej:get({<<"network-map">>},NetworkMap),
+	{struct, utils:apply_attribute_filter_to_list(_Pids, AddressTypeFilter,true)};
 filter_pids(undefined, NetworkMap, AddressTypeFilter) ->
 	%If the attribute is not present we merely treat it as an empty array
 	%(see case above).
@@ -152,8 +156,12 @@ filter_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
 		undefined -> %When a PID is missing we keep processing
 			filter_pids(T, NetworkMap, AddressTypeFilter, AccIn);
 		Value ->
-			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value),
-			filter_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
+			case utils:apply_attribute_filter(AddressTypeFilter, [], Value, true) of
+				[] ->
+					filter_pids(T, NetworkMap, AddressTypeFilter, AccIn);
+				NewValue ->
+					filter_pids(T, NetworkMap, AddressTypeFilter, [{H,NewValue}] ++ AccIn)
+			end
 	end. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -236,3 +244,23 @@ validate_semantics(NetworkMap) ->
 			lager:info("Semantic violation - error will be returned",[]),
 			{error, 422, "422-4 Semantic Violation - Map did not pass semantic formats"}
     end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% @doc Validate a Map Filtering POST's body
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+is_valid_filter(JSON) ->
+	case weak_validate_syntax(JSON) of
+		{ok, Body} -> 
+			%lager:info("Value is ~p and test result is ~p~n",[ej:get({"pids"},Body), (ej:get({"pids"},Body) =/= undefined)]),
+			case (ej:get({"pids"},Body) =/= undefined) of
+				true -> 
+					lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),
+					{true, Body};
+				false -> 
+					lager:info("~p--Is Valid Filter- Error - pids attribute was not present",[?MODULE]),
+					{false, undefined}
+			end;
+		SomethingElse -> 
+			lager:info("Filter did not pass weak validation check",[]),
+			{false, SomethingElse}
+	end.
