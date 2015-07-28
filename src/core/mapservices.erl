@@ -118,7 +118,6 @@ get_map(MapIdentifier, Vtag) ->
 get_map_by_filter(MapIdentifier, InputParameters) ->
 	filter_map( get_map(MapIdentifier), InputParameters ).
 	
-	
 filter_map(not_found, _) ->
 	not_found;
 filter_map(NetworkMap, InputParameters) ->

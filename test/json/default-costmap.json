@@ -1,0 +1,27 @@
+{
+"meta" : {
+"dependent-vtags" : [
+{"resource-id": "my-default-network-map",
+"tag": "initial"
+}
+],
+"cost-type" : {"cost-mode" : "numerical",
+"cost-metric": "routingcost"
+}
+},
+"cost-map" : {
+"default": { "default": 1.0, "mine": 75.0, "mine1": 75.0, "mine1a" : 75.0, "mine2" : 75.0, "mine3" : 75.0, "private": 75.0 },
+"linklocal" : { "linklocal" : 1.0 },
+"loopback" : { "loopback" : 0.0 },
+"mine" : { "default": 75.0, "mine" : 1.0, "mine1" : 15.0, "mine1a" : 15.0, "mine2" : 15.0, "mine3" : 15.0, "peer1" : 30.0, "peer2" : 30.0, "tran1" : 50.0, "tran2" : 50.0 },
+"mine1" : { "default": 75.0, "mine" : 15.0, "mine1" : 1.0, "mine1a" : 2.0, "mine2" : 5.5, "mine3" : 7.0, "peer1" : 20.0, "peer2" : 25.0, "tran1" : 40.0, "tran2" : 45.0 },
+"mine1a" : { "default" : 75.0, "mine" : 15.0, "mine1" : 2.5, "mine1a" : 1.0, "mine2" : 7.0, "mine3" : 9.0, "peer1" : 22.0, "peer2" : 24.0, "tran1" : 42.0, "tran2" : 48.0 },
+"mine2" : { "default" : 75.0, "mine" : 15.0, "mine1" : 5.0, "mine1a" : 7.0, "mine2" : 6.0, "mine3" : 23.0, "peer1" : 25.0, "peer2" : 24.0, "tran1" : 43.0, "tran2" : 46.0 },
+"mine3" : { "default" : 75.0, "mine" : 15.0, "mine1" : 7.0, "mine1a" : 9.0, "mine2" : 6.0, "mine3" : 1.0, "peer1" : 25.0, "peer2" : 28.0, "tran1" : 45.0, "tran2" : 49.0 },
+"peer1" : { "mine" : 30.0, "mine1" : 20.0, "mine1a" : 22.0, "mine2" : 23.0, "mine3" : 25.0, "peer1" : 1.0 },
+"peer2" : { "mine" : 30.0, "mine1" : 25.0, "mine1a" : 24.0, "mine2" : 25.0, "mine3" : 28.0, "peer2" : 1.0 },
+"private" : { "private" : 1.0 },
+"tran2" : { "mine" : 50.0, "mine1" : 45.0, "mine1a" : 48.0, "mine2" : 46.0, "mine3" : 49.0, "tran2" : 1.0 },
+"tran1" : { "mine" : 50.0, "mine1" : 40.0, "mine1a" : 48.0, "mine2" : 46.0, "mine3" : 49.0, "peer1" : 1.0 }
+}
+}

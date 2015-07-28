@@ -32,6 +32,7 @@
 	get_item/2, 
 	get_item_versions/1,
 	remove/2, 
+	remove_all/1,
 	store/2, 
 	store/3, 
 	get_latest_version/1,
@@ -190,6 +191,25 @@ remove(ResourceId, Vtag) when is_binary(ResourceId) andalso is_binary(Vtag) ->
 	_Key = <<ResourceId/bitstring, Vtag/bitstring>>,
 	etscommon:delete(?ENTITYTBL,?COMMONTBLOPTS,_Key).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Removes all instances of an item
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-spec remove_all(ResourceId :: string()) -> atom().
+
+remove_all(ResourceId) ->	
+	try
+		_Results = ets:match(?ENTITYTBL,{'$1', ResourceId, '_', '_', '_' }),
+		lists:foreach(fun([E]) -> 
+						ets:delete(?ENTITYTBL,E)
+					   end,
+					   _Results),
+		 ets:delete(?LATESTVSNTBL, ResourceId)
+	catch
+		error:badarg -> 
+			create_entity_table(),
+			create_latest_version_table()
+	end.
+
 %%%%%%%%%%%%%%%%%%%%%%%%
 %% Stores Item
 %%%%%%%%%%%%%%%%%%%%%%%%
@@ -249,7 +269,7 @@ get_latest_version(ResourceId) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 refresh_latest_version(ResourceId) ->	
 	try
-		_Results = ets:match({'_', ResourceId, '$1', '_', '$2' }),
+		_Results = ets:match(?ENTITYTBL,{'_', ResourceId, '$1', '_', '$2' }),
 		case length(_Results) of
 			0 ->  %%Erase 
 				ets:delete(?LATESTVSNTBL, ResourceId);

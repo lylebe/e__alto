@@ -240,7 +240,7 @@ validate_cost_values([{DstPid,MetricValue}=Attribute|T],SrcPid,CostMode,NetworkP
 		true -> 
 			ErrorList
 	end,
-    case validate_cost_metric(Attribute,SrcPid,CostMode) of
+    case metrics:validate_cost_metric(Attribute,SrcPid,CostMode) of
 			[] -> %% no error found
 				validate_cost_values(T,SrcPid,CostMode,NetworkPids,NewErrorList);
 			MetricErrorList -> 
@@ -314,54 +314,6 @@ validate_endpoint_costs(EPCosts) ->
 validate_ep_costmap_rows([],_,ErrorList) ->
 	ErrorList;
 validate_ep_costmap_rows([{SrcEP,L}|T],CostMode,ErrorList) ->
-	NewErrorList = lists:foldl(fun(E,AccIn) -> validate_cost_metric(E,SrcEP,CostMode) ++ AccIn end, ErrorList, L),
+	NewErrorList = lists:foldl(fun(E,AccIn) -> metrics:validate_cost_metric(E,SrcEP,CostMode) ++ AccIn end, ErrorList, L),
 	validate_ep_costmap_rows(T,CostMode,NewErrorList).
 	
-%% 
-%% Validates that the attributes's value conforms to the format (ordinal, numerical)
-%% of the metric it represents.
-%%	
-validate_cost_metric({AttributeName,AttributeValue},JSONPath,CostMode) ->
-	case is_valid_instance(CostMode, bin_to_num(AttributeValue)) of
-		false ->
-			[{invalid_metric_value, JSONPath ++ <<"/">> ++ AttributeName, AttributeValue}];
-		true ->
-			[]
-	end.
-
-%%
-%% Safely changes a binary value to a numeric value
-%%
-bin_to_num(Bin) ->
-    N = binary_to_list(Bin),
-    case string:to_float(N) of
-        {error,no_float} -> list_to_integer(N);
-        {F,_Rest} -> F
-    end.
-
-%%
-%% Selects which test to perform to validate that the valus is of the 
-%% specified metric type
-%%
-is_valid_instance(numerical, Val) -> 
-	is_numerical(Val);
-is_valid_instance(ordinal,Val) ->
-	is_ordinal(Val).
-
-%%
-%% Validates ordinal metric values for conformance.
-%%
-is_ordinal(X) when is_integer(X) andalso X >= 0 ->
-	true;
-is_ordinal(_) ->
-	false.
-	
-%%	
-%% Validates numerical metric values for conformance.
-%%	
-is_numerical(X) when is_float(X) ->
-	true;
-is_numerical(X) when is_integer(X) ->
-	true;
-is_numerical(_) ->
-	false.

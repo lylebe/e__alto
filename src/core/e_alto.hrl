@@ -158,7 +158,7 @@ updateResource(ResourceId, Vtag, ApplicationType, Body, ApplicationState) ->
 getIRD() ->
 	case registry:get_resource(<<"IRD">>) of
 		not_found -> %Initialize IRD;
-			updateIRD( {struct,[{<<"meta">>,{struct,[]}},{<<"resources">>,{struct,[]}}]} ),
+			updateIRD( {struct,[{<<"meta">>,{struct,[{<<"cost-types">>,{struct,[]}}] }},{<<"resources">>,{struct,[]}} ]} ),
 			getIRD();
 		Value -> Value
 	end.

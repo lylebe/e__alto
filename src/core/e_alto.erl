@@ -48,7 +48,16 @@ init() ->
 	e_alto_backend:init(),
 	{Path,_}=mapservices:load_default_map(),
 	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
-	e_alto_backend:set_constant(<<"routelist">>,[{map,Path},{ird,"/"}]).
+	_DefaultRouteList = [{map,Path},{ird,"/"}],
+	_DefaultCostMaps = costmapservices:load_defaults(),
+	_RouteList1 = lists:foldl(fun(E,AccIn) -> add_route_info(costmap, E, AccIn) end, _DefaultRouteList, _DefaultCostMaps),
+	e_alto_backend:set_constant(<<"routelist">>, _RouteList1),
+	lager:info("Final Route List is ~p",[_RouteList1]).
+
+add_route_info(_, {_,error}, List) ->
+	List;
+add_route_info(ApplicationType, {Path,_}, List) ->
+	[ {ApplicationType, Path} ] ++ List.
 
 load_app(App) ->
 	 case application:start(App) of 
@@ -107,7 +116,10 @@ compileRouteList(List) ->
 									Handler = case AppType of 
 										map -> map_services;
 										ird -> ird_services;
-										_ -> throw({error,unknown_apptype})
+										costmap -> costmap_services;
+										UnknownValue ->
+											lager:info("An unknown type of ~p was referenced",[atom_to_list(UnknownValue)]),
+											throw({error,unknown_apptype})
 									end,
 									[ {GoodPath, Handler, []} ] ++ AccIn
 								end,

@@ -144,7 +144,7 @@ get_resource(ResourceId, Vtag) ->
 get_resource_by_path(URI, Tag) ->
 	case get_resourceid_for_path(URI) of
 		not_found -> not_found;
-		ResourceId -> get_resource(ResourceId,Tag)
+		{_,ResourceId} -> get_resource(ResourceId,Tag)
 	end.
 	
 %%
