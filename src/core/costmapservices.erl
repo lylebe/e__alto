@@ -32,8 +32,7 @@
 
 		 get_id_for_path/3,
 		 
-		 get_costmap_by_filter/2, 
-		 get_costmap_by_filter/3,
+		 filter_costmap/2,
 
 		 register_mapping/3,
 		 register_mapping/4,
@@ -157,6 +156,8 @@ store_costmap(Path,JSON) ->
 %% - MetricInformation is the parsed Meta inforamatio of the metric
 %% - ResourceId is the internal ResourceId associated with the cost map
 %%
+contains_filterspec(undefined, CostMetric, CostMode) ->
+	{false, nothing};
 contains_filterspec([], CostMetric, CostMode) ->
 	{false, nothing};
 contains_filterspec([{ {struct,[{Name,_}]}=_MetaInfo,_ResourceId}|T], CostMetric, CostMode) ->
@@ -166,13 +167,19 @@ contains_filterspec([{ {struct,[{Name,_}]}=_MetaInfo,_ResourceId}|T], CostMetric
 		false -> contains_filterspec(T, CostMetric, CostMode)
 	end.
 
-get_costmapxxx(Path, CostMetric, CostMode) ->
+get_costmap(Path, CostMetric, CostMode) ->
 	case get_filterinfo(Path) of
 		not_found ->
 			lager:info("Error - No filter information found for Path ~p",[Path]),
 			not_found;
 		_FilterInfo ->
-					ok
+			case contains_filterspec(_FilterInfo, CostMetric, CostMode) of
+				{false, nothing} ->
+					lager:info("No filter specification found for ~p that matches CostMode/CostMetric in request",[Path]),
+					{ not_found, "No matching filter specification found"};
+				{true, _ResourceId} ->
+					registry:get_resource(_ResourceId)
+			end
 	end.
 
 get_filterinfo(Path) when is_binary(Path) ->
@@ -400,10 +407,14 @@ is_valid_filter(Filter) ->
 			case (ej:get({"cost-type"},Body) =/= undefined) of
 				true -> 
 					lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),
-					{true, Body};
+					case valid_constraints(ej:get({"constraints"},Body),ej:get({"cost-type","cost-mode"},Body),[]) of
+						{ true, empty_list } -> {true, Body, []};
+						{ true, Constraints } -> {true, Body, Constraints};
+						{ false, Something } -> {false, Something}
+					end;
 				false -> 
-					lager:info("~p--Is Inalid Filter- Error - cost-type attribute was not present",[?MODULE]),
-					{false, undefined}
+					lager:info("~p--Is Invalid Filter- Error - cost-type attribute was not present",[?MODULE]),
+					{false, invalid_request}
 			end;
 		SomethingElse -> 
 			lager:info("Filter did not pass weak validation check",[]),
@@ -411,50 +422,118 @@ is_valid_filter(Filter) ->
 	end.	
 
 %%
-%% @doc Retrieves Pids based upon the JSON provided request.  
-%% 
-get_costmap_by_filter(MapIdentifier, InputParameters) ->
-	filter_costmap( costmapservices:get_costmap(MapIdentifier), InputParameters ).
+%% @doc Validates a list of Constraints
+%%
+valid_constraints(undefined,_,_) ->
+	{ true, empty_list};
+valid_constraints(Conditions,Units,AccIn) when is_binary(Units) ->
+	valid_constraints(Conditions,list_to_atom(binary_to_list(Units)),AccIn);
+valid_constraints(Conditions,Units,AccIn) when is_list(Units) ->
+	valid_constraints(Conditions,list_to_atom(Units),AccIn);
+valid_constraints([], _, AccIn) ->
+	{true, AccIn};
+valid_constraints([H|T], Units, AccIn) ->
+	case valid_constraint(H,Units) of
+		{false, SomeValue} -> 
+			lager:info("Invalid Constration found with error ~p", [atom_to_list(SomeValue)]),
+			{false, SomeValue};
+		{true, Constraint} ->
+			valid_constraints(T,Units,[Constraint]++AccIn)
+	end.
 
 %%
-%% @doc Retrieves Pids based upon the JSON provided request.  
-%% 
-get_costmap_by_filter(MapIdentifier, Vtag, InputParameters) ->
-	%%STEP 1 - Validate the request format
-	_FormatOk = is_valid_filter(InputParameters),
-	
-	filter_costmap( costmapservices:get_costmap(MapIdentifier, Vtag), InputParameters ).	
-	
-filter_costmap(not_found, _) ->
-	not_found;
-filter_costmap(CostMap, InputParameters) ->	
-	A = { struct, [{<<"meta">>, {struct, []}},	
-				   {<<"network-map">>, filter_pids( ej:get({<<"pids">>},InputParameters), 
-													 CostMap, 
-													 ej:get({<<"address-types">>},InputParameters) 
-													 ) }]},	
-	ej:set({<<"meta">>,<<"vtag">>}, A, ej:get({<<"meta">>,<<"vtag">>},CostMap)).
-	
-	
-filter_pids([], NetworkMap, AddressTypeFilter) ->
-	%No PIDs are to be filtered
-	{struct, _Pids} = ej:get({<<"network-map">>},NetworkMap),
-	{struct, utils:apply_attribute_filter_to_list(_Pids, AddressTypeFilter)};
-filter_pids(undefined, NetworkMap, AddressTypeFilter) ->
-	%If the attribute is not present we merely treat it as an empty array
-	%(see case above).
-	filter_pids([], NetworkMap, AddressTypeFilter);
-filter_pids(PIDFilter, NetworkMap, AddressTypeFilter) ->
-	{struct, filter_pids(PIDFilter, NetworkMap, AddressTypeFilter, [])}.
-	
-filter_pids([], _, _, AccIn) ->
-	AccIn;
-filter_pids([H|T], NetworkMap, AddressTypeFilter, AccIn) ->
-	case ej:get({<<"network-map">>,H},NetworkMap) of
-		undefined -> %When a PID is missing we keep processing
-			filter_pids(T, NetworkMap, AddressTypeFilter, AccIn);
-		Value ->
-			NewValue = utils:apply_attribute_filter(AddressTypeFilter, Value),
-			filter_pids(T, NetworkMap, AddressTypeFilter, [NewValue] ++ AccIn)
+%% @doc Validates an individual Constraint.
+%%
+valid_constraint(Condition,Units) when is_atom(Units) ->
+	{_Operator, _Value} = string:tokens(Condition, " "),
+	{_ValType,_NumValue} = to_unit(_Value),
+	case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
+		false -> {false, invalid_format};
+		true -> 
+			case Units == _ValType of
+				true -> {true, {list_to_atom(_Operator), _NumValue}};
+				false -> {false, value_type_mismatch}
+			end
 	end. 
 
+%%
+%% @doc Coverts the string value to the appropriate units value.  This
+%% funciton only supports numeric and orginal units at this time.
+%%
+to_unit(L) when is_list(L) ->
+	Float = (catch erlang:list_to_float(L)),
+	case is_number(Float) of
+		true -> {floattype, Float};
+		false ->
+			Int = (catch erlang:list_to_integer(L)),
+			case is_number(Int) of
+				true -> {inttype, Int};
+				false -> {undefined, undefined}
+			end
+	end.
+
+%%
+%% @doc Retrieves Information based upon the JSON provided request.  
+%% 	
+filter_costmap(Path, InputParameters) ->
+	case is_valid_filter(InputParameters) of 
+		{true, Body, Constraints} ->
+			CostMetric = ej:get({"cost-type","cost-metric"},Body),
+			CostMode = ej:get({"cost-type","cost-mode"},Body),
+			case get_filterinfo(Path) of
+				not_found ->
+					lager:info("Error - No filter information found for Path ~p",[Path]),
+					not_found;
+				_FilterInfo ->
+					case contains_filterspec(_FilterInfo, CostMetric, CostMode) of
+						{false, nothing} ->
+							{not_found, "The Costmap could not be located for the Cost Metric and Mode requested"};
+						{true, not_found} ->
+							{not_found, "Although the Filter request is valid the Costmap could not be located"};
+						{true, _CostMapId} ->
+							_CostMap = registry:get_resource(_CostMapId),
+							A = { struct, [{<<"meta">>, {struct, []}},	
+										   {<<"network-map">>, filter_sources( ej:get({<<"pids">>,<<"srcs">>},Body), 
+																			ej:get({<<"pids">>,<<"dsts">>},Body), 
+																			Constraints,
+																			 _CostMap,
+																			[]) }]}
+					end;
+				{false, SomeIssue} ->
+					{error, SomeIssue}
+			end;
+		{false, ErrMessage} ->
+			{error, ErrMessage}
+	end. 
+
+add_if_nonempty([],List) ->
+	List;
+add_if_nonempty([Value],List) ->
+	[Value] ++ List.
+
+filter_sources(undefined,Dsts,Constraints,CostMap,AccIn) ->
+	{struct, Pids} = ej:get({"cost-map"},CostMap),
+	lists:foldl(fun(E,{Dsts,Constraints,List}) -> {Dsts, add_if_nonempty(filter_destinations(E,Dsts,Constraints,[]), List)} end, {Dsts,Constraints,[]}, Pids);
+filter_sources([],_,_,_,AccIn) ->
+	AccIn;
+filter_sources([H|T],Dsts,Constraints,CostMap,AccIn) ->
+	case ej:get({"cost-map",H},CostMap) of
+		undefined ->
+			filter_sources(T,Dsts,Constraints,CostMap,AccIn);
+		Value ->
+			_NewAccIn = case filter_destinations(Value,Dsts,Constraints,[]) of 
+				[] -> AccIn;
+				AttList -> [{H, {struct, AttList}}] ++ AccIn
+			end,
+			filter_sources(T,Dsts,CostMap,Constraints,_NewAccIn)
+	end.
+	
+filter_destinations([],_,_,AccIn) ->
+	AccIn;
+filter_destinations([H|T],Value,Constraints,AccIn) ->
+	case ej:get({"H"},Value) of
+		undefined ->
+			filter_destinations(T,Value,Constraints,AccIn);
+		Destination ->
+			filter_destinations(T,Value,Constraints,[Destination]++AccIn)
+	end.
