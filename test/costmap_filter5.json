@@ -1,0 +1,1 @@
+{ "cost-type" : {"cost-mode": "numerical", "cost-metric": "routingcost" },"pids" : { "dsts":["mine3","mine1","peer2"] } }

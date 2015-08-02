@@ -62,7 +62,7 @@ handle_map_filter(Req, State) ->
 	{_Path,_}=cowboy_req:path(Req),
 	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
 	{ok, Body, _} = cowboy_req:body(Req),
-	lager:info("Body received it ~p~n",[Body]),
+	lager:info("Body received is ~p~n",[Body]),
 	%Validation
 	{RespBody, Req2} = case mapservices:is_valid_filter(Body) of
 		{false,_} -> 

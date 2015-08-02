@@ -1,0 +1,1 @@
+{ "constraints": [ "ge 1.0", "lt 32.0"], "cost-type" : {"cost-mode": "numerical", "cost-metric": "routingcost" },"pids" : { "srcs" : [ "mine1" ] } }

@@ -144,7 +144,11 @@ store_costmap(Path,JSON) ->
 			registry:add_uri_mapping(_Path,_ResourceId),
 			
 			%Step 4 - Set the FilterInfo for the URI
-			e_alto_backend:set_constant( list_to_binary(Path ++ ?FILTEREXT), [ {_MetricMetaInfo, _ResourceId} ]),
+			_FilterPath = case lists:nth(1,Path) of
+				47 -> Path;
+				_ -> "/" ++ Path
+			end,
+			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {_MetricMetaInfo, _ResourceId} ]),
 			
 			{ok, _ResourceId, Costmap};
 		Error ->
@@ -183,9 +187,11 @@ get_costmap(Path, CostMetric, CostMode) ->
 	end.
 
 get_filterinfo(Path) when is_binary(Path) ->
-	e_alto_backend:get_constant(<< Path/bitstring, << ?FILTEREXT / bitstring >> >>);
+	{_,Spec}=e_alto_backend:get_constant(<< Path/bitstring, << ?FILTEREXT >>/ bitstring >>),
+	Spec;
 get_filterinfo(Path) when is_list(Path) ->
-	e_alto_backend:get_constant(list_to_binary(Path ++ ?FILTEREXT)).
+	{_,Spec}=e_alto_backend:get_constant(list_to_binary(Path ++ ?FILTEREXT)),
+	Spec.
 
 %%
 %% Internally, paths of URIs are mapped to costmaps.
@@ -444,13 +450,15 @@ valid_constraints([H|T], Units, AccIn) ->
 %%
 %% @doc Validates an individual Constraint.
 %%
+valid_constraint(Condition,Units) when is_binary(Condition) ->
+	valid_constraint(binary_to_list(Condition), Units);
 valid_constraint(Condition,Units) when is_atom(Units) ->
-	{_Operator, _Value} = string:tokens(Condition, " "),
+	[_Operator, _Value] = string:tokens(Condition, " "),
 	{_ValType,_NumValue} = to_unit(_Value),
 	case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
 		false -> {false, invalid_format};
 		true -> 
-			case Units == _ValType of
+			case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
 				true -> {true, {list_to_atom(_Operator), _NumValue}};
 				false -> {false, value_type_mismatch}
 			end
@@ -463,7 +471,7 @@ valid_constraint(Condition,Units) when is_atom(Units) ->
 to_unit(L) when is_list(L) ->
 	Float = (catch erlang:list_to_float(L)),
 	case is_number(Float) of
-		true -> {floattype, Float};
+		true ->  {floattype, Float};
 		false ->
 			Int = (catch erlang:list_to_integer(L)),
 			case is_number(Int) of
@@ -481,6 +489,8 @@ filter_costmap(Path, InputParameters) ->
 			CostMetric = ej:get({"cost-type","cost-metric"},Body),
 			CostMode = ej:get({"cost-type","cost-mode"},Body),
 			case get_filterinfo(Path) of
+				{false, SomeIssue} ->
+					{error, SomeIssue};
 				not_found ->
 					lager:info("Error - No filter information found for Path ~p",[Path]),
 					not_found;
@@ -492,48 +502,67 @@ filter_costmap(Path, InputParameters) ->
 							{not_found, "Although the Filter request is valid the Costmap could not be located"};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
-							A = { struct, [{<<"meta">>, {struct, []}},	
+							{ struct, [{<<"meta">>, {struct, []}},	
 										   {<<"network-map">>, filter_sources( ej:get({<<"pids">>,<<"srcs">>},Body), 
 																			ej:get({<<"pids">>,<<"dsts">>},Body), 
 																			Constraints,
 																			 _CostMap,
 																			[]) }]}
-					end;
-				{false, SomeIssue} ->
-					{error, SomeIssue}
+					end
 			end;
 		{false, ErrMessage} ->
 			{error, ErrMessage}
 	end. 
 
-add_if_nonempty([],List) ->
-	List;
-add_if_nonempty([Value],List) ->
-	[Value] ++ List.
-
-filter_sources(undefined,Dsts,Constraints,CostMap,AccIn) ->
+filter_sources(undefined,Dsts,Constraints,CostMap,[]) ->
 	{struct, Pids} = ej:get({"cost-map"},CostMap),
-	lists:foldl(fun(E,{Dsts,Constraints,List}) -> {Dsts, add_if_nonempty(filter_destinations(E,Dsts,Constraints,[]), List)} end, {Dsts,Constraints,[]}, Pids);
+	{_,_,_Result} = lists:foldl(fun(E,{_Dsts,_Constraints,List}) -> {_Dsts, _Constraints, filter_dest(undefined,E,_Dsts,_Constraints,List)} end, {Dsts,Constraints,[]}, Pids),
+	_Result;
 filter_sources([],_,_,_,AccIn) ->
 	AccIn;
 filter_sources([H|T],Dsts,Constraints,CostMap,AccIn) ->
 	case ej:get({"cost-map",H},CostMap) of
 		undefined ->
 			filter_sources(T,Dsts,Constraints,CostMap,AccIn);
-		Value ->
-			_NewAccIn = case filter_destinations(Value,Dsts,Constraints,[]) of 
-				[] -> AccIn;
-				AttList -> [{H, {struct, AttList}}] ++ AccIn
-			end,
-			filter_sources(T,Dsts,CostMap,Constraints,_NewAccIn)
+		{struct, Attrs} ->
+			filter_sources(T,Dsts,CostMap,Constraints, filter_dest(H, {struct,Attrs}, Dsts, Constraints, AccIn))
 	end.
 	
+filter_dest(undefined,{Name,{struct,Attrs}},DstsFilter,Constraints,AccIn) ->
+	filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AccIn);
+filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AccIn) ->
+	case filter_destinations(Attrs,DstsFilter,Constraints,[]) of 
+		[] -> AccIn;
+		AttList -> [{Name, {struct, AttList}}] ++ AccIn
+	end.	
+	
+filter_destinations([{_,Val}=H|T],undefined,Constraints,AccIn) ->
+	case meets_criteria(Constraints,Val) of
+		false -> filter_destinations(T,undefined,Constraints,AccIn);
+		true -> filter_destinations(T,undefined,Constraints,[H]++AccIn)
+	end;
+filter_destinations(Dsts,[],Constraints,_) ->
+	filter_destinations(Dsts,undefined,Constraints,[]);
 filter_destinations([],_,_,AccIn) ->
 	AccIn;
-filter_destinations([H|T],Value,Constraints,AccIn) ->
-	case ej:get({"H"},Value) of
-		undefined ->
-			filter_destinations(T,Value,Constraints,AccIn);
-		Destination ->
-			filter_destinations(T,Value,Constraints,[Destination]++AccIn)
+filter_destinations([{Dest,Val}|T],DestsFilter,Constraints,AccIn) ->
+	case (lists:member(Dest,DestsFilter) andalso (meets_criteria(Constraints,Val))) of
+		false -> filter_destinations(T,DestsFilter,Constraints,AccIn);
+		true -> filter_destinations(T,DestsFilter,Constraints,[{Dest,Val}]++AccIn)
+	end.
+	
+meets_criteria([], Value) ->
+	true;
+meets_criteria([{Operator,Discriminator}|T], Value) ->
+	_TestResult = 	case Operator of
+		eq -> Value == Discriminator;
+		le -> Value =< Discriminator;
+		ge -> Value >= Discriminator;
+		ne -> Value =/= Discriminator;
+		lt -> Value < Discriminator;
+		gt -> Value > Discriminator
+	end,
+	case _TestResult of
+		false -> false;
+		true -> meets_criteria(T,Value)
 	end.

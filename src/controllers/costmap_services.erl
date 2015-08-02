@@ -66,20 +66,16 @@ handle_costmap_filter(Req, State) ->
 	{ok, Body, _} = cowboy_req:body(Req),
 	lager:info("Body received it ~p~n",[Body]),
 	%Validation
-	{RespBody, Req2} = case ?TARGETMOD:is_valid_filter(Body) of
-		{false,_} -> 
+	{RespBody, Req2} = case costmapservices:filter_costmap(_Path,Body) of
+		{error, ErrMessage} ->
 			{"", cowboy_req:reply(422,Req)};
-		{true, ParsedBody} ->
-			case registry:get_resourceid_for_path(_Path) of
-				not_found ->
-					lager:info("~p--Path Mapping not found for ~p~n",[?MODULE,_Path]),
-					{ok, cowboy_req:reply(404,Req)};
-				{_, _ResourceId} ->
-					io:format("~p--Resource Id = ~p~n",[?MODULE,_ResourceId]),
-					_FilteredMap = mapservices:get_map_by_filter(_ResourceId,ParsedBody),
-					io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
-					{mochijson2:encode(_FilteredMap), Req}
-			end
+		not_found ->
+			{"", cowboy_req:reply(404,Req)};			
+		{not_found, NFMessage} ->
+			{"", cowboy_req:reply(422,Req)};			
+		_FilteredMap ->
+			io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
+			{mochijson2:encode(_FilteredMap), Req}
 	end,
 	Req3 = cowboy_req:set_resp_body(RespBody,Req2),
   	{true, Req3, State}.
