@@ -94,7 +94,8 @@ generate_resourceinfo(CostName,MapId,CostMode,CostMetric,Path) ->
 		\"uri\" : \"" ++ application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path ++ "\",
 		\"media-type\" : \"application/alto-costmap+json\",
 		\"capabilities\" : {
-			\"cost-type-names\" : [ \"" ++ binary_to_list(_MetricName) ++ "\" ]
+			\"cost-type-names\" : [ \"" ++ binary_to_list(_MetricName) ++ "\" ],
+			\"cost-constraints\" : true 
 		},
 		\"uses\": [ \"" ++ binary_to_list(MapId) ++ "\" ] } ",
 	{CostName, _Val}.	
@@ -502,8 +503,9 @@ filter_costmap(Path, InputParameters) ->
 							{not_found, "Although the Filter request is valid the Costmap could not be located"};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
-							{ struct, [{<<"meta">>, {struct, []}},	
-										   {<<"network-map">>, filter_sources( ej:get({<<"pids">>,<<"srcs">>},Body), 
+							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
+															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
+										   {<<"cost-map">>, filter_sources( ej:get({<<"pids">>,<<"srcs">>},Body), 
 																			ej:get({<<"pids">>,<<"dsts">>},Body), 
 																			Constraints,
 																			 _CostMap,
