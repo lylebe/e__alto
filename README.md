@@ -9,6 +9,25 @@ standards.
 AT THIS TIME THE CODE IS PRE-ALPHA and UNTESTED but is being pushed out 
 to get assistance from others.
 
+Funcionality that has been tested
+- Map and Map Filter Services
+- Costmap and Costmap Filter Services (with constraint support)
+
+TODO
+- Returning RFC 7285 error messages.
+- Endpoint Property Service
+- Endpoint Cost Service
+
+-----
+Install / Build
+1. Install Erlang. The code is built using R16B03 but it does not use maps 
+so it *may* work on earlier versions but is untested.
+
+2. Build with rebar (install if you don't have it).  From the base 
+directory.  (Don't forget to get dependencies first!)
+e_alto$ ./rebar get-deps
+e_alto$ ./rebar compile
+
 -----
 To use 
 1. Run the start script.
