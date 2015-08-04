@@ -25,6 +25,7 @@
 		 get_map/2, 
 		 get_map_by_filter/2, 
 		 validate/1,
+		 pidroutes_tolist/6,
 		 set_map/2,
 		 load_default_map/0,
 		 is_schema_loaded/0,
@@ -72,11 +73,11 @@ gen_resource_entry(Path) when is_list(Path) ->
 
 set_map(Path,JSON) ->
 	case validate(JSON) of
-		{ok, Map, ApplicationState} ->
+		{ok, Map, V4ApplicationState, V6ApplicationState} ->
 			%%Get the ResourceId and tag
 			_ResourceId = ej:get({"meta","vtag","resource-id"},Map),
 			_Tag = ej:get({"meta","vtag","tag"},Map),
-			X = updateResource(_ResourceId, _Tag, map, Map, ApplicationState),
+			X = updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
 			%Step 2 - update IRD
 			_ResourceEntry = gen_resource_entry(Path),
 			updateIRD( ej:set({"resources",_ResourceId}, getIRD(), 
@@ -173,14 +174,14 @@ add_routes([],_,AccIn) ->
 add_routes([H|T],PidName,AccIn) ->
 	add_routes(T,PidName,[{H,PidName}]++AccIn).
 
-%% TODO - Process IPv6 for duplicate detection
-pidroutes_tolist([], AccIn, AccTreeIn, Duplicates) ->
-	{ AccIn, AccTreeIn, Duplicates };
-pidroutes_tolist([{PidName,Attributes} | Tail], AccIn, AccTreeIn, Duplicates) ->
+pidroutes_tolist([], RoutesV4, RoutesV6, TreeInV4, TreeInV6, Duplicates) ->
+	{ RoutesV4, RoutesV6, TreeInV4, TreeInV6, Duplicates };
+pidroutes_tolist([{PidName,Attributes} | Tail], RoutesV4, RoutesV6, TreeInV4, TreeInV6, Duplicates) ->
 	_v4Routes = add_routes(ej:get({<<"ipv4">>}, Attributes),PidName,[]),
-	{ NewTree1, NewDuplicates } = route_utils:insert_route_interval(_v4Routes, AccTreeIn, Duplicates),
+	{ NewV4Tree, NewDuplicates } = route_utils:insert_route_interval(_v4Routes, TreeInV4, Duplicates),
 	_v6Routes = add_routes(ej:get({<<"ipv6">>}, Attributes),PidName,[]),
-	pidroutes_tolist(Tail, _v6Routes ++ _v4Routes ++ AccIn, NewTree1, NewDuplicates).	
+	{ NewV6Tree, NewDuplicates2 } = route_utils:insert_route_interval(_v6Routes, TreeInV6, NewDuplicates), 
+	pidroutes_tolist(Tail, _v4Routes ++ RoutesV4, _v6Routes ++ RoutesV6, NewV4Tree, NewV6Tree, NewDuplicates2).	
 
 validate(JSON) ->
 	case weak_validate_syntax(JSON) of
@@ -194,7 +195,6 @@ validate(JSON) ->
 			SomethingElse
 	end.
 
-%% TODO - Build IPv6 trie seperately from IPv4 trie
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->
 	%%Ensure the tag is set
@@ -218,7 +218,7 @@ validate_semantics(NetworkMap) ->
 	%Build the Route Structures for the condition checks
 	% Condition 1 - same route in two locations - how to resolve - Duplicate detection
 	% for insertion of the same key in a gb_tree.
-	{ PidRoutesList, PidRoutesTree, Duplicates } = pidroutes_tolist(_Pids,[], gb_trees:empty(),[]),
+	{ PidRoutesListV4, PidRoutesListV6, PidRoutesV4Tree, PidRoutesV6Tree, Duplicates } = pidroutes_tolist(_Pids, [], [], gb_trees:empty(), gb_trees:empty(), []),
 	
 	case length(Duplicates) of
 		0 -> lager:info("No exact duplicates found");
@@ -227,18 +227,26 @@ validate_semantics(NetworkMap) ->
 	
 	% Condition 2 - partially overlapping routes (not an interval) - Interval Tree is used
 	% Convert RB tree (gb_tree) to interval tree
-	{_,IntervalTree} = route_utils:set_max_value(PidRoutesTree, PidRoutesTree),
-	Overlaps = route_utils:detect_overlaps(IntervalTree), 
+	{_,IntervalV4Tree} = route_utils:set_max_value(PidRoutesV4Tree, PidRoutesV4Tree),
+	Overlaps = route_utils:detect_overlaps(IntervalV4Tree), 
 	case length(Overlaps) of
-		0 -> lager:info("No CIDR overlaps found");
-		_ -> lager:info("CIDR overlaps found - ~p", Overlaps)
+		0 -> lager:info("No IPv4 CIDR overlaps found");
+		_ -> lager:info("CIDR IPv4 overlaps found - ~p", Overlaps)
+	end,	
+	{_,IntervalV6Tree} = route_utils:set_max_value(PidRoutesV6Tree, PidRoutesV6Tree),
+	OverlapsV6 = route_utils:detect_overlaps(IntervalV6Tree), 
+	case length(OverlapsV6) of
+		0 -> lager:info("No IPv6 Prefix overlaps found");
+		_ -> lager:info("IPv6 Prefix overlaps found - ~p", OverlapsV6)
 	end,	
 	
     % Last Task is to build a trie that can perform longest common subsquence of the route data	
-    case ((length(Duplicates)>0) or (length(Overlaps)>0)) of
+    case ((length(Duplicates)>0) or (length(Overlaps)>0) or (length(OverlapsV6)>0)) of
 		false -> % build the prefix tree...
-			lager:info("Building NetworkMap Trie for Routing",[]),
-		    {ok, NetworkMap, route_utils:build_bitstring_trie( PidRoutesList, trie:new() )};
+			lager:info("Building NetworkMap Tries for Routing",[]),
+		    { ok, NetworkMap, 
+				route_utils:build_bitstring_trie( PidRoutesListV4, trie:new() ),
+				route_utils:build_bitstring_trie( PidRoutesListV6, trie:new() ) };
 		true ->
 			lager:info("Semantic violation - error will be returned",[]),
 			{error, 422, "422-4 Semantic Violation - Map did not pass semantic formats"}

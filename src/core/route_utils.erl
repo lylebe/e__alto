@@ -41,12 +41,12 @@ cidr_to_int(Cidr) ->
 ip_to_int({A,B,C,D}) -> 
 	(A*16777216)+(B*65536)+(C*256)+(D);	
 ip_to_int({_,_,_,_,_,_,_,_}=IPv6Address) -> 
-	ipv6_to_int(tuple_to_list(IPv6Address),0,0).
+	ipv6_to_int(tuple_to_list(IPv6Address),0).
 	
-ipv6_to_int([],_,AccIn) ->
+ipv6_to_int([],AccIn) ->
 	AccIn;
-ipv6_to_int([H|T],Position,AccIn) ->	
-	ipv6_to_int(T, Position+1, (AccIn bsr (16*Position))+H). 
+ipv6_to_int([H|T],AccIn) ->	
+	ipv6_to_int(T, (AccIn bsl 16)+H). 
 	
 base_address(CIDR) -> 
 	lager:info("Called with value ~p",[CIDR]),
