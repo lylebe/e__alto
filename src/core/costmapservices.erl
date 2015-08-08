@@ -59,7 +59,7 @@ load_costmap({Path,FileLoc}) ->
 	lager:info("~p--Loading CostMap -- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
 	case file:read_file(FileLoc) of
 		{ok, _File} ->
-			lager:info("~p--Load Default Map -- Read complete - Starting Storage",[?MODULE]),	
+			lager:info("~p--Load CostMap -- Read complete - Starting Storage",[?MODULE]),	
 			{ok, _ResourceId, X} = costmapservices:store_costmap( string:sub_string(Path,2),_File),
 			lager:info("~p--Load Default Map -- Completed",[?MODULE]),
 			lager:info("Resulting Costmap -> ~n~n~p~n~n~n~n~n~n",[X]),

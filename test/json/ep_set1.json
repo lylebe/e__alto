@@ -1,0 +1,16 @@
+{
+"meta" : {
+"dependent-vtags" : [
+{"resource-id": "my-default-network-map",
+"tag": "7915dc0290c2705481c491a2b4ffbec482b3cf62"
+}
+]
+},
+"endpoint-properties": {
+"ipv4:0.0.0.1" : { "def.pid": "default", "alt.pid" : "default" },
+"ipv4:10.1.2.3" : { "def.pid" : "private", "alt.pid" : "private" },
+"ipv4:100.0.0.1" : { "def.pid" : "mine1", "alt.pid" : "default", "priv:ietf-type" : "mine" },
+"ipv4:100.0.1.1" : { "def.pid" : "mine1a", "alt.pid" : "default", "priv:ietf-type" : "mine" },
+"ipv4:100.0.192.1" : { "def.pid" : "mine1a", "alt.pid" : "default", "priv:ietf-type" : "mine" } 
+}
+}

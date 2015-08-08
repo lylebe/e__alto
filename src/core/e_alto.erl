@@ -83,7 +83,8 @@ stop(_State) ->
     ok.
 
 load_defaults() ->
-	mapservices:load_default_map().
+	mapservices:load_default_map(),
+	endpointservices:load_defaults().
 
 add_route(AppType,Route) ->
 	process_route(AppType,Route,fun(AppTypeA,RouteA,List) ->  [{AppTypeA,RouteA}] ++ List end).
