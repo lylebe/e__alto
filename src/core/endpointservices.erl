@@ -12,7 +12,7 @@
 % See the License for the specific language governing permissions and
 % limitations under the License.
 %
-%% @author Lyle Bertz <lyleb551144@gmail.com>
+%% @author LyleA="{ \"properties\": [ \"def.pid\" ], \"endpoints\" : [ \"ipv4:0.0.0.1\", \"ipv4:100.0.1.1\" ] }". Bertz <lyleb551144@gmail.com>
 %% @copyright Copyright 2015 Lyle Bertz
 %%
 %% @doc ALTO (RFC 7285) Endpoint Services functions
@@ -23,7 +23,7 @@
 
 -export([
 	load_defaults/0,
-	load_endpoints/1
+	ep_query/2
 	]).
 	
 -define(EPDEFPATHID, epdefpath).	
@@ -50,7 +50,7 @@ load_endpoint_file(Path,FileLoc) ->
 	case file:read_file(FileLoc) of
 		{ok, _File} ->
 			lager:info("~p--Load Endpoints File -- Read complete - Starting Storage",[?MODULE]),	
-			{ok, _ResourceId, X} = store_endpoints( string:sub_string(Path,2),FileLoc,_File),
+			{ok, _ResourceId, X} = store_endpoints( Path,FileLoc,_File),
 			lager:info("~p--Load Endpoints File -- Completed",[?MODULE]),
 			lager:info("Loaded Endpoints -> ~n~n~p~n~n~n~n~n~n",[X]),
 			{Path, X};
@@ -66,7 +66,7 @@ get_default_epservice(Path) ->
 	e_alto_backend:get_constant(?EPDEFPATHID).
 	
 ep_query(Path,Body)	->
-	case validate_epquery of 
+	case validate_epquery(Body) of 
 		{ok, JSON} ->
 			get_eps(Path, ej:get({"endpoints"},JSON), ej:get({"properties"},JSON));
 		SomethingElse -> 
@@ -90,33 +90,38 @@ validate_epquery(JSON) ->
 			SomethingElse
 	end.	
 	
+%%TODO - Go back to the map in the meta info IF the EP is part of a ep
+%% resource that uses more than one item in the dependent vtag.
 get_eps(Path,EPlist,PropsList) ->
+	lager:info("Retreiving path ~p",[Path]),
 	_Space = registry:get_resource_by_path(Path),
+	lager:info("Result was ~p",[_Space]),
 	{_,EPs,NeededResources} = lists:foldl(fun(E,{Space,FoundEPs,Resources}) -> 
-					case trie:find(E,Space) of
+					case trie:find(binary_to_list(E),Space) of
 						error -> {Space,FoundEPs,Resources};
 						{ok, Value} -> {Space, [{E,Value}] ++ FoundEPs, [Value] ++ Resources}
 					end
 				end,
 				{_Space,[],[]},
 				EPlist),
-	_Resources = lists:foldl(fun(E,AccIn) -> [{E,registry:get_reource(E)}] ++ AccIn end, [], lists:usort(NeededResources)),
-	lists:foldl(fun({EPName,ResourceKey},{ResourceList,PropFilter,AccIn}) -> 
+	_Resources = lists:foldl(fun(E,AccIn) -> [{E,registry:get_resource(E)}] ++ AccIn end, [], lists:usort(NeededResources)),
+	{_,_,EPRetVal,MetaInfo} = lists:foldl(fun({EPName,ResourceKey},{ResourceList,PropFilter,AccIn1,AccIn2}) -> 
 					case find_ep(EPName,ResourceKey,ResourceList,PropFilter) of
-						nothing -> {ResourceList,PropFilter,AccIn};
-						Something -> {ResourceList,PropFilter,[Something]++AccIn}
+						nothing -> {ResourceList,PropFilter,AccIn1,AccIn2};
+						{Something1, Something2} -> {ResourceList,PropFilter,[Something1]++AccIn1,[Something2]++AccIn2}
 					end
 				end,
-				{_Resources,PropsList,[]},
-				EPs).
+				{_Resources,PropsList,[],[]},
+				EPs),
+	{EPRetVal, lists:usort(MetaInfo)}.
 	
 find_ep(EP,ResourceKey,ResourcesList,PropFilter) ->
 	case lists:keyfind(ResourceKey,1,ResourcesList) of
 		false -> nothing;
-		JSON ->
-			case ej:get({EP},JSON) of
+		{_, JSON} ->
+			case ej:get({<<"endpoint-properties">>,EP},JSON) of
 				undefined -> nothing;
-				Value -> utils:apply_attribute_filter({EP, Value})
+				Value -> {utils:apply_attribute_filter(PropFilter,{EP, Value}), ej:get({<<"meta">>,<<"dependent-vtags">>}, JSON) }
 			end
 	end.
 	
@@ -152,13 +157,15 @@ store_endpoints(Path,ResourceKey,Data) ->
 			
 			%%STEP 3 - Add the EPs to the Path
 			{struct, JSONAttrs} = ej:get({"endpoint-properties"},JSON),
+			lager:info("~n~n Space is ~p~n~n Key = ~p~n~n PROPS are ~p~n~n",[_LatestSpace,ResourceKey,JSONAttrs]),
 			_NewSpace = store_eps(_LatestSpace,ResourceKey,JSONAttrs),
+			lager:info("~n~n~n Space is now ~p~n~n~n",[_NewSpace]),
 			_SpaceResourceId = case registry:get_resourceid_for_path(Path) of
 				not_found -> 
 					_NewId = << ResourceKey/bitstring, <<"-epindex">>/bitstring >>,
 					registry:add_uri_mapping(Path,_NewId),
 					_NewId;
-				Found -> Found
+				{_,Found} -> Found
 			end,
 			updateResource(_SpaceResourceId, eppropsIndex, _NewSpace, nothing),
 			{ok, ResourceKey, JSON}
@@ -206,7 +213,7 @@ validate(JSON) ->
 			SomethingElse
 	end.	
 	
-store_eps(SomeValue,ResourceId,SomeList) when is_tuple(SomeValue) ->
+store_eps(SomeValue,ResourceId,SomeList) when is_atom(SomeValue) ->
 	store_eps(trie:new(), ResourceId, SomeList);
 store_eps(Space,_,[]) ->
 	Space;
@@ -221,14 +228,14 @@ store_eps(Space,ResourceId,[H|T]=List) when is_list(List) ->
 		false -> store_eps( trie:store(H,ResourceId,Space), ResourceId, T)
 	end.
 	
-store_ep(Space,ResourceId,EPAddress) when is_tuple(Space) ->
+store_ep(Space,ResourceId,EPAddress) when is_atom(Space) ->
 	store_ep(trie:new(), ResourceId, EPAddress);
 store_ep(Space,ResourceId,EPAddress) when is_binary(EPAddress) ->
 	trie:store(binary_to_list(EPAddress),ResourceId,Space);
 store_ep(Space,ResourceId,EPAddress) ->
 	trie:store(EPAddress,ResourceId,Space).
 	
-remove_eps(SomeValue,SomeList) when is_tuple(SomeValue) ->
+remove_eps(SomeValue,SomeList) when is_atom(SomeValue) ->
 	trie:new();
 remove_eps(Space,[]) ->
 	Space;
@@ -237,7 +244,7 @@ remove_eps(Space,[{Name,_}|T]=List) when is_list(List) ->
 remove_eps(Space,[H|T]=List) when is_list(List) ->
 	remove_eps( trie:erase(H,Space), T).	
 	
-remove_ep(Space,EPAddress) when is_tuple(Space) ->
+remove_ep(Space,EPAddress) when is_atom(Space) ->
 	trie:new();
 remove_ep(Space,EPAddress) ->	
 	trie:erase(EPAddress,Space).

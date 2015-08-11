@@ -47,6 +47,7 @@ init() ->
 	application:load(e_alto),
 	e_alto_backend:init(),
 	{Path,_}=mapservices:load_default_map(),
+	endpointservices:load_defaults(),
 	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
 	_DefaultRouteList = [{map,Path},{ird,"/"}],
 	_DefaultCostMaps = costmapservices:load_defaults(),

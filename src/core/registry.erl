@@ -166,6 +166,9 @@ is_registered(PathURI) ->
 %% 
 %% @doc Gets the Resource ID associated with a path
 %%
+
+%% TODO - Change this to only return the Resource Id!!!! Otherwise, 
+%% change the name of the function!
 get_resourceid_for_path(PathURI) ->
 	etscommon:get_value(?URIMAPTBL,?COMMONTBLOPTS,PathURI).
 
