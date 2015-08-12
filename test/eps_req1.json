@@ -1,0 +1,6 @@
+{
+"properties" : [ "def.pid",
+	"alt.pid" ],
+"endpoints" : [ "ipv4:0.0.0.1",
+	"ipv4:100.0.0.1" ]
+}

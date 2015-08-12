@@ -1,0 +1,6 @@
+{
+"properties" : [ "def.pid",
+	"alt.pid", "priv:ietf-type", "foo" ],
+"endpoints" : [ "ipv4:0.0.0.1",
+	"ipv4:100.0.0.1" ]
+}

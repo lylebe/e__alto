@@ -14,8 +14,7 @@ Funcionality that has been tested
 - Costmap and Costmap Filter Services (with constraint support)
 
 TODO
-- Returning RFC 7285 error messages.
-- Endpoint Property Service
+- Returning RFC 7285 error messages
 - Endpoint Cost Service
 
 -----

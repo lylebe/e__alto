@@ -33,17 +33,19 @@
 	
 load_defaults() ->
 	lager:info("~p--Load EndpointServices Defaults --Starting Load",[?MODULE]),
-	load_endpoints( get_param(?EPDEFFILES) ),
+	_EPList = load_endpoints( get_param(?EPDEFFILES), [] ),
 	set_default_epservice( get_param(?EPDEFPATHID) ),
-	lager:info("~p--Load EndpointServices Defaults--Completed",[?MODULE]).
+	lager:info("~p--Load EndpointServices Defaults--Completed",[?MODULE]),
+	_EPList.
 	
-load_endpoints(undefined) ->
-	ok;
-load_endpoints({Path,[H|T]=FileLocs}) when is_list(FileLocs) ->
+load_endpoints(undefined,[]) ->
+	[];
+load_endpoints({Path,[H|T]=FileLocs}, AccIn) when is_list(FileLocs) ->
 	load_endpoint_file(Path,H),
-	load_endpoints({Path,T});
-load_endpoints({Path,FileLoc}) ->
-	load_endpoint_file(Path,FileLoc).
+	load_endpoints({Path,T}, AccIn);
+load_endpoints({Path,FileLoc}, AccIn) ->
+	load_endpoint_file(Path,FileLoc),
+	[{Path,FileLoc}] ++ AccIn.
 
 load_endpoint_file(Path,FileLoc) ->
 	lager:info("~p--Loading Endpoints File -- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
@@ -113,7 +115,9 @@ get_eps(Path,EPlist,PropsList) ->
 				end,
 				{_Resources,PropsList,[],[]},
 				EPs),
-	{EPRetVal, lists:usort(MetaInfo)}.
+	_MetaList = lists:usort(lists:flatten(MetaInfo)),
+	{struct, [ { <<"meta">>, {struct, [ { <<"dependent-vtags">>, _MetaList  } ] } },
+					   { <<"endpoint-properties">>, {struct, EPRetVal } } ] }.
 	
 find_ep(EP,ResourceKey,ResourcesList,PropFilter) ->
 	case lists:keyfind(ResourceKey,1,ResourcesList) of
