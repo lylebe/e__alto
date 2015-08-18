@@ -25,6 +25,7 @@
 		 get_map/2, 
 		 get_map_by_filter/2, 
 		 validate/1,
+		 validate_semantics/1,
 		 pidroutes_tolist/6,
 		 set_map/2,
 		 load_default_map/0,
@@ -184,16 +185,7 @@ pidroutes_tolist([{PidName,Attributes} | Tail], RoutesV4, RoutesV6, TreeInV4, Tr
 	pidroutes_tolist(Tail, _v4Routes ++ RoutesV4, _v6Routes ++ RoutesV6, NewV4Tree, NewV6Tree, NewDuplicates2).	
 
 validate(JSON) ->
-	case weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			lager:info("Map passed weak validation test",[]),
-			_Res = validate_semantics(Body),
-			lager:info("Will return ~p for syntax validation",[_Res]),
-			_Res;
-		SomethingElse -> 
-			lager:info("Map did not pass weak validation check",[]),
-			SomethingElse
-	end.
+	commonvalidate(JSON,"Map",fun mapservices:validate_semantics/1). 
 
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->

@@ -12,6 +12,7 @@ to get assistance from others.
 Funcionality that has been tested
 - Map and Map Filter Services
 - Costmap and Costmap Filter Services (with constraint support)
+- Endpoint Property Service
 
 TODO
 - Returning RFC 7285 error messages
@@ -24,13 +25,13 @@ so it *may* work on earlier versions but is untested.
 
 2. Build with rebar (install if you don't have it).  From the base 
 directory.  (Don't forget to get dependencies first!)
-e_alto$ ./rebar get-deps
-e_alto$ ./rebar compile
+> e_alto$ ./rebar get-deps
+> e_alto$ ./rebar compile
 
 -----
 To use 
 1. Run the start script.
-e_alto$ ./start.sh
+> e_alto$ ./start.sh
 
 You will see several initializaton activites in the erlang console.
 

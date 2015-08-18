@@ -21,12 +21,32 @@
 -module(utils).
 
 -export([
+	valid_eptype/1,
+	valid_eptype/2,
 	apply_attribute_filter_to_list/2,
 	apply_attribute_filter_to_list/3,
 	apply_attribute_filter/2,
 	apply_attribute_filter/3,
 	apply_attribute_filter/4
 	]).	
+	
+valid_eptype(EPAddress, _) ->
+	valid_eptype(EPAddress).
+	
+valid_eptype(EPAddress) when is_binary(EPAddress) ->
+	[Type,_] = binary:split(EPAddress,[<<":">>]),
+	case Type of 
+		<<"ipv4">> -> true;
+		<<"ipv6">> -> true;
+		_ -> false
+	end;
+valid_eptype(EPAddress) when is_list(EPAddress) ->
+	[Type,_] = string:tokens(EPAddress,":"),
+	case Type of 
+		"ipv4" -> true;
+		"ipv6" -> true;
+		_ -> false
+	end.	
 	
 %%
 %% @doc Applies an AttributeFilter to a list of JSONObjects

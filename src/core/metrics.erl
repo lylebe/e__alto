@@ -19,7 +19,17 @@
 
 -export([ validate_cost_metric/3,
 		  is_valid_instance/2,
-		  bin_to_num/1 ]).
+		  bin_to_num/1,
+		  metric_to_record/2,
+		  metric_to_record/3,
+		  metric_to_record/4,
+		  metric_to_json/1,
+		  metric_to_EJSON/1,
+		  autogen_metricname/2,
+		  updateIRD/2
+		   ]).
+
+-include("e_alto.hrl").
 
 %% 
 %% Validates that the attributes's value conforms to the format (ordinal, numerical)
@@ -69,3 +79,59 @@ is_numerical(X) when is_integer(X) ->
 	true;
 is_numerical(_) ->
 	false.
+	
+-spec metric_to_record(Name :: binary(),
+				Mode :: binary(),
+				Metric :: binary(),
+				Description :: list() ) -> #costmetric{}.
+metric_to_record(Name, Mode, Metric, Description) when is_binary(Name), is_binary(Mode), is_binary(Metric), is_list(Description) ->
+	#costmetric{name=Name,mode=Mode,metric=Metric,description=Description}.
+
+-spec metric_to_record(Name :: binary(),
+				Mode :: binary(),
+				Metric :: binary()) -> #costmetric{}.
+metric_to_record(Name, Mode, Metric) when is_binary(Name), is_binary(Mode), is_binary(Metric) ->
+	#costmetric{name=Name,mode=Mode,metric=Metric}.	
+
+-spec metric_to_record(Mode :: binary(),
+				Metric :: binary()) -> #costmetric{}.
+metric_to_record(Mode, Metric) when is_binary(Mode), is_binary(Metric) ->
+	metric_to_record(autogen_metricname(Mode,Metric),Mode,Metric).
+
+-spec metric_to_json(Metric :: #costmetric{}) 
+				-> list().
+metric_to_json(Metric) when is_record(Metric, costmetric) -> 	
+	mochijson2:encode( metric_to_EJSON(Metric) ).
+	
+-spec metric_to_EJSON(Metric :: #costmetric{}) 
+				-> tuple().	
+metric_to_EJSON(Metric) when is_record(Metric, costmetric) ->
+	_List = [ {<<"cost-mode">>, Metric#costmetric.mode},
+			{<<"cost-metric">>, Metric#costmetric.metric} ],
+	_Description = case Metric#costmetric.description of
+		undefined -> [];
+		Description -> [{ <<"description">>, Description }]
+	end,
+	{ Metric#costmetric.name, {struct, _List ++ _Description }}.
+	
+-spec autogen_metricname ( Mode :: binary(),
+						   Metric :: binary() ) -> binary().
+autogen_metricname(Mode, Metric) when is_binary(Mode) andalso is_binary(Metric) ->
+	_Separator = <<"-">>,
+	_Suffix = <<"-autogen">>,
+	<< Mode/bitstring, _Separator/bitstring, Metric/bitstring, _Suffix/bitstring >>.
+	
+-spec gen_metrics(Metrics :: [ #costmetric{} ]) -> [ list() ].
+gen_metrics(Metrics) when is_list(Metrics) ->
+	lists:fold(fun(E,AccIn) -> [ metric_to_json(E) ] ++ AccIn end, Metrics, []).
+	
+-spec get_metricnames(Metrics :: [ #costmetric{} ]) -> list().
+get_metricnames(Metrics) when is_list(Metrics) ->
+	lists:foldl(fun(E,AccIn) -> [ E#costmetric.name ] ++ AccIn end, Metrics, []).
+
+-spec updateIRD(Metric :: #costmetric{},
+				IRD :: tuple()) -> list().
+updateIRD(Metric, IRD) ->
+	_MetricEJSON = metric_to_EJSON(Metric),
+	ej:set({"meta","cost-types",element(1,_MetricEJSON)}, IRD, element(2,_MetricEJSON)).		
+

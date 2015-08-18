@@ -21,7 +21,11 @@
 %% @end
 -module(costmapservices).
 
+%% TODO - Convert Filterspec to using the metric record list instead of
+%% the EJSON representation.
+
 -export([init/0,
+		 validate_semantics/1,
 		 get_costmap/1, 
 		 get_costmap/2, 
 		 
@@ -69,37 +73,6 @@ load_costmap({Path,FileLoc}) ->
 			{Path, error}
 	end.	
 
-generate_irdinfo(CostName,CostMode,CostMetric,MapId) when is_binary(CostName) ->
-	_CostName1 = <<CostName/bitstring,<<"-cost-map">>/bitstring >>,
-	{ generate_metainfo(CostName,CostMode,CostMetric,""), 
-	  generate_resourceinfo(_CostName1,MapId,CostMode,CostMetric,generate_path(<<"">>, CostMode, CostMetric)) }.
-
-generate_metainfo(CostName,CostMode,CostMetric,Description) ->
-	_MetricName = << CostMode/bitstring, <<"-">>/bitstring, CostMetric/bitstring >>, 
-	_Part1 = "\"" ++ binary_to_list(_MetricName) ++ "\" : {
-		\"cost-mode\":\"" ++ binary_to_list(CostMode) ++ "\",
-		\"cost-metric\":\"" ++ binary_to_list(CostMetric) ++ "\"",
-	_Part2 = case is_list(Description) of 
-			true -> ",\n\t\t\"" ++ Description ++ "\"";
-			false -> ""
-	end,
-	_MetaPart = _Part1 ++ _Part2 ++ "}",
-	{CostName, _MetaPart}.
-
-generate_resourceinfo(CostName,MapId,CostMode,CostMetric,Path) when is_binary(Path) ->
-	generate_resourceinfo(CostName,MapId,CostMode,CostMetric,binary_to_list(Path));
-generate_resourceinfo(CostName,MapId,CostMode,CostMetric,Path) ->	
-	_MetricName = << CostMode/bitstring, <<"-">>/bitstring, CostMetric/bitstring >>,
-	_Val = "\"" ++ binary_to_list(CostName) ++ "\" : {
-		\"uri\" : \"" ++ application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path ++ "\",
-		\"media-type\" : \"application/alto-costmap+json\",
-		\"capabilities\" : {
-			\"cost-type-names\" : [ \"" ++ binary_to_list(_MetricName) ++ "\" ],
-			\"cost-constraints\" : true 
-		},
-		\"uses\": [ \"" ++ binary_to_list(MapId) ++ "\" ] } ",
-	{CostName, _Val}.	
-
 %%
 %% @doc Stores the Cost Map information.  
 %%
@@ -115,7 +88,6 @@ store_costmap(Path,JSON) ->
 		{ok, Costmap, ApplicationState} ->
 			%%Get the ResourceId and tag
 			_MapId = ej:get({"meta","dependent-vtags",1,"resource-id"},Costmap),
-		
 			_MapTag = ej:get({"meta","dependent-vtags",1,"tag"},Costmap),
 			
 			_CostMode = ej:get({"meta","cost-type","cost-mode"},Costmap),
@@ -125,22 +97,21 @@ store_costmap(Path,JSON) ->
 			lager:info("Map ~p has been stored. Updating IRD",[_ResourceId]),
 			
 			%Step 2 - update IRD
-			Separator = <<"-">>,
-			_CostName = << _CostMode/bitstring, Separator/bitstring, _CostMetric/bitstring >>,
-			_MetaInfo = generate_resourceinfo(_CostName,_MapId,_CostMode,_CostMetric,Path),
-			_IRD1 = ej:set({"resources",_ResourceId}, getIRD(), 
-							ej:get({element(1,_MetaInfo)},
-								 mochijson2:decode("{" ++ element(2,_MetaInfo) ++ "}" ))),
-							
-			_ResourceInfo = generate_metainfo(_CostName,_CostMode,_CostMetric,undefined),
-			_MetricMetaInfo = mochijson2:decode("{" ++ element(2,_ResourceInfo) ++ "}"),				
-			_IRD2 = ej:set({"meta","cost-types",_CostName}, _IRD1, 
-						ej:get({element(1,_ResourceInfo)}, _MetricMetaInfo )),
-			updateIRD( _IRD2 ),
+			_Metric = metrics:metric_to_record(_CostMode,_CostMetric),
+			_IRD0 = metrics:updateIRD(_Metric, getIRD()),		
+			_ResourceEntry = resources:resource_to_record(costmap,
+							_ResourceId,
+							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path),
+							[ <<"application/alto-costmap+json">> ],
+							[],
+							[ _Metric ],
+							[_MapId]),
+			_IRD1 = resources:updateIRD(_ResourceEntry,_IRD0),				
+			updateIRD( _IRD1 ),
 			lager:info("IRD Updated to ~n~n~p~n~n~n",[getIRD()]),
 
 			%Step 3 - Add URI Mapping to Registry
-			_Path = registry:extract_path(ej:get({<<"resources">>,_ResourceId,<<"uri">>},_IRD2)),
+			_Path = registry:extract_path(ej:get({<<"resources">>,_ResourceId,<<"uri">>},_IRD1)),
 			lager:info("HTTP URI is ~p for Resource ~p",[_Path,_ResourceId]),
 			registry:add_uri_mapping(_Path,_ResourceId),
 			
@@ -149,8 +120,7 @@ store_costmap(Path,JSON) ->
 				47 -> Path;
 				_ -> "/" ++ Path
 			end,
-			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {_MetricMetaInfo, _ResourceId} ]),
-			
+			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {metrics:metric_to_EJSON(_Metric), _ResourceId} ]),
 			{ok, _ResourceId, Costmap};
 		Error ->
 			Error
@@ -161,13 +131,14 @@ store_costmap(Path,JSON) ->
 %% - MetricInformation is the parsed Meta inforamatio of the metric
 %% - ResourceId is the internal ResourceId associated with the cost map
 %%
-contains_filterspec(undefined, CostMetric, CostMode) ->
+contains_filterspec(undefined, _, _) ->
 	{false, nothing};
-contains_filterspec([], CostMetric, CostMode) ->
+contains_filterspec([], _, _) ->
 	{false, nothing};
-contains_filterspec([{ {struct,[{Name,_}]}=_MetaInfo,_ResourceId}|T], CostMetric, CostMode) ->
-	case ((ej:get({Name,<<"cost-metric">>},_MetaInfo) == CostMetric) and
-		  (ej:get({Name,<<"cost-mode">>},_MetaInfo) == CostMode)) of
+contains_filterspec([{ {_,MetaInfo},_ResourceId}|T], CostMetric, CostMode) ->
+	lager:info("~p is the value",[MetaInfo]),
+	case ((ej:get({<<"cost-metric">>},MetaInfo) == CostMetric) and
+		  (ej:get({<<"cost-mode">>},MetaInfo) == CostMode)) of
 		true -> {true, _ResourceId };
 		false -> contains_filterspec(T, CostMetric, CostMode)
 	end.
@@ -177,7 +148,7 @@ get_costmap(Path, CostMetric, CostMode) ->
 		not_found ->
 			lager:info("Error - No filter information found for Path ~p",[Path]),
 			not_found;
-		_FilterInfo ->
+		_FilterInfo ->			
 			case contains_filterspec(_FilterInfo, CostMetric, CostMode) of
 				{false, nothing} ->
 					lager:info("No filter specification found for ~p that matches CostMode/CostMetric in request",[Path]),
@@ -307,16 +278,7 @@ deregister_mapping(BasePath, CostMode, CostMetric) ->
 %% Validation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 validate(JSON) ->
-	case weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			lager:info("Map passed weak validation test",[]),
-			_Res = validate_semantics(Body),
-			lager:info("Will return ~p for syntax validation",[_Res]),
-			_Res;
-		SomethingElse -> 
-			lager:info("Map did not pass weak validation check",[]),
-			SomethingElse
-	end.
+	commonvalidate(JSON,"CostMap",fun costmapservices:validate_semantics/1).
 
 get_pids_fromMap(NetworkMap) ->
 	%Get the PID Names - The Cost Map PIDS MUST come from the map
@@ -334,71 +296,7 @@ validate_semantics(Costmap) ->
 		SearchResult ->
 			{_, _, _, {_, _NetworkMap, _}, _ } = SearchResult,
 			_PidNames = get_pids_fromMap(_NetworkMap),
-
-			%Get the Cost-Mode
-			_CostMode = case ej:get({<<"meta">>,<<"cost-type">>,<<"cost-mode">>},Costmap) of
-				<<"numerical">> -> numerical;
-				<<"ordinal">> -> ordinal;
-				_ -> unknown
-			end,
-			case _CostMode of
-				unknown ->
-					_Mode = ej:get({<<"meta">>,<<"cost-type">>,<<"cost-mode">>},Costmap),
-					lager:info("422-5 An unknown Cost Mode of type ~p was referenced in the document", [_Mode]),
-					{error, 422, "422-5 An unknown Cost Mode was referenced in the document"};
-				_ ->
-					% Check to ensure the PIDs are in the network map AND the value type is consistent
-					Errors = validate_costmap_rows(ej:get({<<"cost-map">>},Costmap),_CostMode,_PidNames,[]),
-					case length(Errors) of
-						0 ->
-							{ok, Costmap, nostate};
-						_ ->
-							lager:info("Semantic Errors found - ~p", Errors),
-							{error, 422, "422-6 Semantic Errors are present in the document"}
-					end					
-			end
-	end.
-
-%%
-%% Validates individual Cost Map Rows
-%%
-validate_costmap_rows({struct,L},CostMode,NetworkPids,ErrorList) ->
-	validate_costmap_rows(L,CostMode,NetworkPids,ErrorList);
-validate_costmap_rows([],_,_,ErrorList) ->
-	ErrorList;
-validate_costmap_rows([{SrcPid,L}|T],CostMode,NetworkPids,ErrorList) ->
-	NewErrorList = case lists:member(SrcPid,NetworkPids) of
-		false -> 
-			validate_cost_values(L,SrcPid,CostMode,NetworkPids,[{src_pid_notfound, SrcPid}] ++ ErrorList);
-		true -> 
-			validate_cost_values(L,SrcPid,CostMode,NetworkPids,ErrorList)
-	end,
-	validate_costmap_rows(T,CostMode,NetworkPids,NewErrorList).
-	
-%%
-%% Validates the cost values of a Cost Map's individual row entry by
-%% a. Determining that the Destination PIDs exist in the Network Map
-%%    referenced in the dependent-vtag
-%% b. Determine that all cost values conform to the Cost Mode type
-%%    specified
-%%	
-validate_cost_values({struct,L},SrcPid,CostMode,NetworkPids,ErrorList) ->
-	validate_cost_values(L,SrcPid,CostMode,NetworkPids,ErrorList);
-validate_cost_values([],_,_,_,ErrorList) ->
-	ErrorList;
-validate_cost_values([{DstPid,MetricValue}=Attribute|T],SrcPid,CostMode,NetworkPids,ErrorList) ->
-	%Check the DstPid
-	NewErrorList = case lists:member(DstPid,NetworkPids) of
-		false -> 
-			[{dst_pid_notfound, DstPid}] ++ ErrorList;
-		true -> 
-			ErrorList
-	end,
-    case metrics:validate_cost_metric(Attribute,SrcPid,CostMode) of
-			[] -> %% no error found
-				validate_cost_values(T,SrcPid,CostMode,NetworkPids,NewErrorList);
-			MetricErrorList -> 
-				validate_cost_values(T,SrcPid,CostMode,NetworkPids, MetricErrorList ++ NewErrorList)
+			costmap_utils:validate_Xcostmap(Costmap,{<<"cost-map">>},fun lists:member/2,_PidNames)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%
@@ -410,7 +308,6 @@ validate_cost_values([{DstPid,MetricValue}=Attribute|T],SrcPid,CostMode,NetworkP
 is_valid_filter(Filter) ->
 	case weak_validate_syntax(Filter) of
 		{ok, Body} -> 
-			%lager:info("Value is ~p and test result is ~p~n",[ej:get({"pids"},Body), (ej:get({"pids"},Body) =/= undefined)]),
 			case (ej:get({"cost-type"},Body) =/= undefined) of
 				true -> 
 					lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),

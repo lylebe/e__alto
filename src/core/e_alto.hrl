@@ -24,6 +24,9 @@
 -define(ALTOSCHEMAKEY, schema).
 -define(JESSE_ETS, jesse_ets).
 
+-record(costmetric, { name, mode, metric, description=undefined }). 
+-record(resourceentry, { name, type, uri, mediatype, accepts=undefined, capabilities=undefined, uses=[] }).
+
 %%
 %% Internal method to determine if the application is loaded.
 %%
@@ -98,6 +101,18 @@ is_schema_loaded() ->
 					false
 			end
 	end.
+	
+commonvalidate(JSON,TypeName,SyntaxValidationFunction) ->
+	case weak_validate_syntax(JSON) of
+		{ok, Body} -> 
+			lager:info("~p passed weak validation test",[TypeName]),
+			_Res = SyntaxValidationFunction(Body),
+			lager:info("Will return ~p for syntax validation",[_Res]),
+			_Res;
+		SomethingElse -> 
+			lager:info("~p did not pass weak validation check",[TypeName]),
+			SomethingElse
+	end.
 
 weak_validate_syntax(Body) when is_binary(Body) ->
 	weak_validate_syntax( binary_to_list(Body) );
@@ -112,7 +127,6 @@ weak_validate_syntax(Body) when is_list(Body) ->
 			lager:info("Invalid JSON Found",[]),
 			{error, 422, "422-1 Operation result create invalid JSON"}
 	end.
-
 	
 validate_syntax(Body) when is_binary(Body) ->
 	validate_syntax( binary_to_list(Body) );

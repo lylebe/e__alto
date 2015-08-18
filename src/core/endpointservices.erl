@@ -30,6 +30,22 @@
 -define(EPDEFFILES, epfiles).
 	
 -include("e_alto.hrl").
+
+%%
+%% @doc A common validation function.
+%%
+commonvalidate(JSON) ->
+	case weak_validate_syntax(JSON) of
+		{ok, Body} -> 
+			lager:info("Passed weak validation test",[]),
+			_Res = validate_semantics(Body),
+			lager:info("Will return ~p for syntax validation",[_Res]),
+			_Res;
+		SomethingElse -> 
+			lager:info("Did not pass weak validation check",[]),
+			SomethingElse
+	end.
+
 	
 load_defaults() ->
 	lager:info("~p--Load EndpointServices Defaults --Starting Load",[?MODULE]),
@@ -141,7 +157,7 @@ store_endpoints(Path,ResourceKey,Data) when is_list(ResourceKey) ->
 	store_endpoints(Path,list_to_binary(ResourceKey),Data);
 store_endpoints(Path,ResourceKey,Data) ->
 	%%STEP 1 - Validate
-	case validate(Data) of
+	case commonvalidate(Data) of
 		{ false, Errors, _ } -> 
 			lager:info("Errors found - ~p",[Errors]),
 			{error, "Invalid Request"};
@@ -181,41 +197,14 @@ validate_semantics(JSON) ->
 	%%Validate Each Address Type is supported and build it to a list
 	{struct, _Attributes} = ej:get({"endpoint-properties"}, JSON),
 	_Errors = lists:foldl(fun({Name,_},AccIn) -> 
-					case valid_type(Name) of
+					case utils:valid_eptype(Name) of
 						true -> AccIn;
 						false -> [Name] ++ AccIn
 					end
 				end,
 				[],
 				_Attributes),
-	{ (length(_Errors) == 0), _Errors, JSON }.
-	
-valid_type(EPAddress) when is_binary(EPAddress) ->
-	[Type,_] = binary:split(EPAddress,[<<":">>]),
-	case Type of 
-		<<"ipv4">> -> true;
-		<<"ipv6">> -> true;
-		_ -> false
-	end;
-valid_type(EPAddress) when is_list(EPAddress) ->
-	[Type,_] = string:tokens(EPAddress,":"),
-	case Type of 
-		"ipv4" -> true;
-		"ipv6" -> true;
-		_ -> false
-	end.
-	
-validate(JSON) ->
-	case weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			lager:info("Map passed weak validation test",[]),
-			_Res = validate_semantics(Body),
-			lager:info("Will return ~p for syntax validation",[_Res]),
-			_Res;
-		SomethingElse -> 
-			lager:info("Did not pass weak validation check",[]),
-			SomethingElse
-	end.	
+	{ (length(_Errors) == 0), _Errors, JSON }.	
 	
 store_eps(SomeValue,ResourceId,SomeList) when is_atom(SomeValue) ->
 	store_eps(trie:new(), ResourceId, SomeList);
