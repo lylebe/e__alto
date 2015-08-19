@@ -54,19 +54,31 @@ resource_to_JSON(Resource) when is_record(Resource, resourceentry) ->
 -spec resource_to_EJSON(Resource :: #resourceentry{}) -> tuple().
 resource_to_EJSON(Resource) when is_record(Resource, resourceentry)  ->
 	%%Process optional attributes first!
-	_Accepts = gen_attr(<<"accepts">>, Resource#resourceentry.accepts ),
-	_Uses = gen_attr(<<"uses">>, Resource#resourceentry.uses ),
-	_Capabilities = gen_attr(<<"capabilities">>, Resource#resourceentry.capabilities ),
+	_Accepts = gen_attr(<<"accepts">>, Resource#resourceentry.accepts, false ),
+	_Uses = gen_attr(<<"uses">>, Resource#resourceentry.uses, false),
+	_Capabilities = gen_attr(<<"capabilities">>, Resource#resourceentry.capabilities,true ),
 	_Attrs = [	{<<"uri">>, Resource#resourceentry.uri},
 				{<<"media-type">>, Resource#resourceentry.mediatype }] ++ _Accepts ++ _Uses ++ _Capabilities,
-	{Resource#resourceentry.name, {struct, _Attrs}}.
+	X={Resource#resourceentry.name, {struct, _Attrs}},
+	lager:info("strucutre is ~p",[X]),
+	X.
 	
-gen_attr(Name,Value) ->
+gen_attr(Name,Value,AsStruct) ->
 	case length(Value) of
 		0 -> [];
-		_ -> [ { Name, lists:foldl(fun(E,AccIn) -> [to_resource_attr(E)] ++ AccIn end, [], Value) } ]
+		_ -> 
+			case AsStruct of 
+				false -> [ { Name, lists:foldl(fun(E,AccIn) -> [to_resource_attr(E)] ++ AccIn end, [], Value) } ];
+				true ->  [ { Name, {struct, lists:foldl(fun(E,AccIn) -> [to_resource_attr(E)] ++ AccIn end, [], Value) } } ]
+			end
 	end.
 	
+to_resource_attr({Name, Value}) when is_binary(Name), is_list(Value) ->
+	_Value = to_resource_attr(Value),
+	case is_list(_Value) of
+		false -> {Name, [_Value]};
+		true -> {Name, _Value}
+	end;
 to_resource_attr(Item) when is_record(Item, costmetric) ->
 	case  is_binary(Item#costmetric.name) of
 		true -> Item#costmetric.name;
@@ -78,7 +90,7 @@ to_resource_attr(Item) when is_record(Item, resourceentry) ->
 		false -> list_to_binary(Item#resourceentry.name)
 	end;
 to_resource_attr(Item) when is_list(Item) ->
-	list_to_binary(Item);
+	lists:foldl(fun(E,AccIn) -> [to_resource_attr(E)] ++ AccIn end, [], Item);
 to_resource_attr(Item) when is_binary(Item) ->
 	Item.
 

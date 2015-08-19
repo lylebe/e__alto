@@ -46,36 +46,10 @@ commonvalidate(JSON) ->
 			SomethingElse
 	end.
 
-	
 load_defaults() ->
-	lager:info("~p--Load EndpointServices Defaults --Starting Load",[?MODULE]),
-	_EPList = load_endpoints( get_param(?EPDEFFILES), [] ),
+	Contents = utils:load_defaults("Endpoints", ?EPDEFFILES, fun store_endpoints/3),
 	set_default_epservice( get_param(?EPDEFPATHID) ),
-	lager:info("~p--Load EndpointServices Defaults--Completed",[?MODULE]),
-	_EPList.
-	
-load_endpoints(undefined,[]) ->
-	[];
-load_endpoints({Path,[H|T]=FileLocs}, AccIn) when is_list(FileLocs) ->
-	load_endpoint_file(Path,H),
-	load_endpoints({Path,T}, AccIn);
-load_endpoints({Path,FileLoc}, AccIn) ->
-	load_endpoint_file(Path,FileLoc),
-	[{Path,FileLoc}] ++ AccIn.
-
-load_endpoint_file(Path,FileLoc) ->
-	lager:info("~p--Loading Endpoints File -- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
-	case file:read_file(FileLoc) of
-		{ok, _File} ->
-			lager:info("~p--Load Endpoints File -- Read complete - Starting Storage",[?MODULE]),	
-			{ok, _ResourceId, X} = store_endpoints( Path,FileLoc,_File),
-			lager:info("~p--Load Endpoints File -- Completed",[?MODULE]),
-			lager:info("Loaded Endpoints -> ~n~n~p~n~n~n~n~n~n",[X]),
-			{Path, X};
-		{error, Value} ->
-			lager:info("An error occurred reading the file - ~p",[Value]),
-			{Path, error}
-	end.	
+	Contents.
 
 set_default_epservice(Path) ->
 	e_alto_backend:set_constant(?EPDEFPATHID, Path).

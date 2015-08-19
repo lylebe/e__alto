@@ -104,7 +104,7 @@ store_costmap(Path,JSON) ->
 							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path),
 							[ <<"application/alto-costmap+json">> ],
 							[],
-							[ _Metric ],
+							[ {<<"cost-type-names">>, [_Metric]} ],
 							[_MapId]),
 			_IRD1 = resources:updateIRD(_ResourceEntry,_IRD0),				
 			updateIRD( _IRD1 ),

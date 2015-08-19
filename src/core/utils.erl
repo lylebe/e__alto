@@ -20,6 +20,8 @@
 %% @end
 -module(utils).
 
+-define(APPLICATIONNAME, e_alto).
+
 -export([
 	valid_eptype/1,
 	valid_eptype/2,
@@ -27,8 +29,52 @@
 	apply_attribute_filter_to_list/3,
 	apply_attribute_filter/2,
 	apply_attribute_filter/3,
-	apply_attribute_filter/4
+	apply_attribute_filter/4,
+	load_defaults/3,
+	get_param/1,
+	appname/0
 	]).	
+	
+appname() -> ?APPLICATIONNAME.
+
+get_param(ParamName) ->
+	case application:get_env(?APPLICATIONNAME, ParamName) of
+		{ok, _Result} -> 
+			lager:info("~p value found = ~p", [atom_to_list(ParamName),_Result]),
+			_Result;
+		Else ->
+			lager:info("Parameter is not present - Received ~p",[Else]),
+			undefined
+	end.
+
+load_defaults(Identifier, FilePath, LoadFunction) ->
+	lager:info("~p--Load ~p Defaults --Starting Load",[?MODULE, Identifier]),
+	_List = load_files( get_param(FilePath), LoadFunction, [] ),
+	lager:info("~p--Load ~p Defaults--Completed",[?MODULE, Identifier]),
+	_List.
+	
+load_files(undefined,_,[]) ->
+	[];
+load_files({Path,[H|T]=FileLocs}, LoadFunction, AccIn) when is_list(FileLocs) ->
+	load_file(LoadFunction,Path,H),
+	load_files({Path,T}, LoadFunction, AccIn);
+load_files({Path,FileLoc}, LoadFunction, AccIn) ->
+	load_file(LoadFunction,Path,FileLoc),
+	[{Path,FileLoc}] ++ AccIn.
+
+load_file(LoadFunction, Path,FileLoc) ->
+	lager:info("~p--Load File-- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
+	case file:read_file(FileLoc) of
+		{ok, _File} ->
+			lager:info("~p--Load File-- Read complete - Starting Storage",[?MODULE]),	
+			{ok, _ResourceId, X} = LoadFunction( Path,FileLoc,_File),
+			lager:info("~p--Load File-- Completed",[?MODULE]),
+			lager:info("Loaded Content -> ~n~n~p~n~n~n~n~n~n",[X]),
+			{Path, X};
+		{error, Value} ->
+			lager:info("An error occurred reading the file - ~p",[Value]),
+			{Path, error}
+	end.	
 	
 valid_eptype(EPAddress, _) ->
 	valid_eptype(EPAddress).

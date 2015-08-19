@@ -26,7 +26,9 @@
 		  metric_to_json/1,
 		  metric_to_EJSON/1,
 		  autogen_metricname/2,
-		  updateIRD/2
+		  updateIRD/2,
+		  removeFromSet/2,
+		  addToSet/3
 		   ]).
 
 -include("e_alto.hrl").
@@ -135,3 +137,17 @@ updateIRD(Metric, IRD) ->
 	_MetricEJSON = metric_to_EJSON(Metric),
 	ej:set({"meta","cost-types",element(1,_MetricEJSON)}, IRD, element(2,_MetricEJSON)).		
 
+-spec addToSet(Metric :: #costmetric{},
+			   SomeData :: any(),
+			   Set :: list()) -> list().
+addToSet(Metric, SomeData, Set) ->
+	_Key = metric_to_EJSON(Metric),
+	lists:keystore(_Key, 1, Set, {_Key, SomeData}).
+	
+-spec removeFromSet(Metric :: #costmetric{},
+					Set :: list()) -> list().
+removeFromSet(Metric, Set) -> 
+	case lists:keytake(metric_to_EJSON(Metric), 1, Set) of
+		false -> Set;
+		{_, _, NewSet} -> NewSet
+	end.
