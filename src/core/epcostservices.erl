@@ -24,13 +24,14 @@
 -export([init/0,
 		 %%get_eps/2,
 		 store_eps/3,
-		 load_defaults/0
+		 load_defaults/0,
+		 validate_semantics/1
 		 ]).
 
 -define(FG, finegrained).
 -define(CG, coursegrained).
 -define(MIXED, mixedmode).
--define(EPCSEFPATHID, epcsefpath).	
+-define(EPCSEFPATHID, epcsfpath).	
 -define(EPCSDEFFILES, epcsfiles).
 -define(FILTEREXT,"info").
 
@@ -43,10 +44,12 @@ init() -> ok.
 	
 load_defaults() ->
 	utils:load_defaults("Endpoint Costs", ?EPCSDEFFILES, fun epcostservices:store_eps/3).
-	
+
 %%
 %% @doc Store a EP Cost Document - Only care about fine grained
 %%
+store_eps(Path, ResourceKey, JSON) when is_list(ResourceKey) ->
+	store_eps(Path, list_to_binary(ResourceKey), JSON);
 store_eps(Path, ResourceKey, JSON) ->
 	case commonvalidate(JSON,"EPCostmap", fun epcostservices:validate_semantics/1) of
 		{ok, EPCostmap, ApplicationState} ->
@@ -61,7 +64,7 @@ store_eps(Path, ResourceKey, JSON) ->
 			_IRD0 = metrics:updateIRD(_Metric, getIRD()),		
 			_ResourceEntry = resources:resource_to_record(costmap,
 							_ResourceId,
-							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path),
+							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
 							[ <<"application/alto-costmap+json">> ],
 							[],
 							[ {<<"cost-type-names">>, [_Metric]}, { <<"cost-constraints">>, <<"true">>}],
@@ -114,6 +117,6 @@ removeResource(FilterPath, Metric) ->
 
 %%% Endpoint Cost Map validation support.
 validate_semantics(Costmap) ->
-	costmap_utils:validate_Xcostmap(Costmap,{<<"endpoint-cost-map">>},fun utils:ep_validate/2,nothing).
+	costmap_utils:validate_Xcostmap(Costmap,{<<"endpoint-cost-map">>},fun utils:valid_ep/2,nothing).
 
 

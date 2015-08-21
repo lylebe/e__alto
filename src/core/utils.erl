@@ -25,6 +25,8 @@
 -export([
 	valid_eptype/1,
 	valid_eptype/2,
+	valid_ep/2,
+	valid_address/2,
 	apply_attribute_filter_to_list/2,
 	apply_attribute_filter_to_list/3,
 	apply_attribute_filter/2,
@@ -52,7 +54,9 @@ load_defaults(Identifier, FilePath, LoadFunction) ->
 	_List = load_files( get_param(FilePath), LoadFunction, [] ),
 	lager:info("~p--Load ~p Defaults--Completed",[?MODULE, Identifier]),
 	_List.
-	
+
+load_files({_,[]},_,AccIn) ->
+	AccIn;
 load_files(undefined,_,[]) ->
 	[];
 load_files({Path,[H|T]=FileLocs}, LoadFunction, AccIn) when is_list(FileLocs) ->
@@ -67,7 +71,7 @@ load_file(LoadFunction, Path,FileLoc) ->
 	case file:read_file(FileLoc) of
 		{ok, _File} ->
 			lager:info("~p--Load File-- Read complete - Starting Storage",[?MODULE]),	
-			{ok, _ResourceId, X} = LoadFunction( Path,FileLoc,_File),
+			{ok, _ResourceId, X} = LoadFunction(Path,FileLoc,_File),
 			lager:info("~p--Load File-- Completed",[?MODULE]),
 			lager:info("Loaded Content -> ~n~n~p~n~n~n~n~n~n",[X]),
 			{Path, X};
@@ -75,6 +79,31 @@ load_file(LoadFunction, Path,FileLoc) ->
 			lager:info("An error occurred reading the file - ~p",[Value]),
 			{Path, error}
 	end.	
+	
+valid_ep(EPAddress,_) when is_binary(EPAddress) ->
+	valid_ep(binary_to_list(EPAddress), nothing);
+valid_ep(EPAddress,_) when is_list(EPAddress) ->
+	[Type,Value] = string:tokens(EPAddress,":"),
+	case Type of 
+		"ipv4" -> valid_address(Value,ipv4);
+		"ipv6" -> valid_address(Value,ipv6);
+		_ -> false
+	end.	
+	
+valid_address(Address,Type) when is_binary(Address) ->
+	valid_address(binary_to_list(Address),Type);
+valid_address(Address,Type) ->
+	_Type = case inet:parse_address(Address) of
+		{ok, FinalAddress} ->
+			case size(FinalAddress) of
+				4 -> ipv4;
+				8 -> ipv6;
+				_ -> nothing
+			end;
+		_ ->
+			nothing
+	end,
+	_Type == Type.
 	
 valid_eptype(EPAddress, _) ->
 	valid_eptype(EPAddress).

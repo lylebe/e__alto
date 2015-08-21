@@ -222,8 +222,8 @@ store(ResourceId, Data) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Stores Item (with vtag)
 %%%%%%%%%%%%%%%%%%%%%%%%%%
--spec store( ResourceId :: string(),
-			 Vtag :: string(),
+-spec store( ResourceId :: binary(),
+			 Vtag :: binary(),
 			 Data :: any() ) -> boolean().
 
 store(ResourceId, Vtag, Data) when is_binary(ResourceId) andalso is_binary(Vtag) ->

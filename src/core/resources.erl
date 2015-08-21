@@ -91,7 +91,7 @@ to_resource_attr(Item) when is_record(Item, resourceentry) ->
 	end;
 to_resource_attr(Item) when is_list(Item) ->
 	lists:foldl(fun(E,AccIn) -> [to_resource_attr(E)] ++ AccIn end, [], Item);
-to_resource_attr(Item) when is_binary(Item) ->
+to_resource_attr(Item) ->
 	Item.
 
 -spec updateIRD(Resource :: #resourceentry{},
