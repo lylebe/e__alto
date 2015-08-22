@@ -45,9 +45,7 @@
 		 store_costmap/2,
 		 load_costmap/1,
 		 
-		 load_defaults/0,
-		 is_valid_filter/1
-		 
+		 load_defaults/0
 		]).
 
 -define(DEFCMAPS,costmaps).
@@ -302,81 +300,9 @@ validate_semantics(Costmap) ->
 %%%%%%%%%%%%%%%%%%%%
 %% Filtering
 %%%%%%%%%%%%%%%%%%%%
-%%
-%% @doc Determines if the filter requested is valid.
-%%
+
 is_valid_filter(Filter) ->
-	case weak_validate_syntax(Filter) of
-		{ok, Body} -> 
-			case (ej:get({"cost-type"},Body) =/= undefined) of
-				true -> 
-					lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),
-					case valid_constraints(ej:get({"constraints"},Body),ej:get({"cost-type","cost-mode"},Body),[]) of
-						{ true, empty_list } -> {true, Body, []};
-						{ true, Constraints } -> {true, Body, Constraints};
-						{ false, Something } -> {false, Something}
-					end;
-				false -> 
-					lager:info("~p--Is Invalid Filter- Error - cost-type attribute was not present",[?MODULE]),
-					{false, invalid_request}
-			end;
-		SomethingElse -> 
-			lager:info("Filter did not pass weak validation check",[]),
-			{false, SomethingElse}
-	end.	
-
-%%
-%% @doc Validates a list of Constraints
-%%
-valid_constraints(undefined,_,_) ->
-	{ true, empty_list};
-valid_constraints(Conditions,Units,AccIn) when is_binary(Units) ->
-	valid_constraints(Conditions,list_to_atom(binary_to_list(Units)),AccIn);
-valid_constraints(Conditions,Units,AccIn) when is_list(Units) ->
-	valid_constraints(Conditions,list_to_atom(Units),AccIn);
-valid_constraints([], _, AccIn) ->
-	{true, AccIn};
-valid_constraints([H|T], Units, AccIn) ->
-	case valid_constraint(H,Units) of
-		{false, SomeValue} -> 
-			lager:info("Invalid Constration found with error ~p", [atom_to_list(SomeValue)]),
-			{false, SomeValue};
-		{true, Constraint} ->
-			valid_constraints(T,Units,[Constraint]++AccIn)
-	end.
-
-%%
-%% @doc Validates an individual Constraint.
-%%
-valid_constraint(Condition,Units) when is_binary(Condition) ->
-	valid_constraint(binary_to_list(Condition), Units);
-valid_constraint(Condition,Units) when is_atom(Units) ->
-	[_Operator, _Value] = string:tokens(Condition, " "),
-	{_ValType,_NumValue} = to_unit(_Value),
-	case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
-		false -> {false, invalid_format};
-		true -> 
-			case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
-				true -> {true, {list_to_atom(_Operator), _NumValue}};
-				false -> {false, value_type_mismatch}
-			end
-	end. 
-
-%%
-%% @doc Coverts the string value to the appropriate units value.  This
-%% funciton only supports numeric and orginal units at this time.
-%%
-to_unit(L) when is_list(L) ->
-	Float = (catch erlang:list_to_float(L)),
-	case is_number(Float) of
-		true ->  {floattype, Float};
-		false ->
-			Int = (catch erlang:list_to_integer(L)),
-			case is_number(Int) of
-				true -> {inttype, Int};
-				false -> {undefined, undefined}
-			end
-	end.
+	costmap_utils:is_valid_filter(Filter, "pids", fun utils:invalid_pidnames/1).
 
 %%
 %% @doc Retrieves Information based upon the JSON provided request.  
@@ -409,8 +335,8 @@ filter_costmap(Path, InputParameters) ->
 																			[]) }]}
 					end
 			end;
-		{false, ErrMessage} ->
-			{error, ErrMessage}
+		{false, ConstraintErrors, SrcErrors, DstErrors} ->
+			{error, ConstraintErrors, SrcErrors, DstErrors} 
 	end. 
 
 filter_sources(undefined,Dsts,Constraints,CostMap,[]) ->

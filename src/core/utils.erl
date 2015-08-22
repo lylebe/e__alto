@@ -21,10 +21,14 @@
 -module(utils).
 
 -define(APPLICATIONNAME, e_alto).
+-define(PIDRE, "^[a-zA-Z0-9\-:_@.]{1,64}$").
 
 -export([
+	valid_pidname/1,
+	invalid_pidnames/1,
 	valid_eptype/1,
 	valid_eptype/2,
+	invalid_eps/1,
 	valid_ep/2,
 	valid_address/2,
 	apply_attribute_filter_to_list/2,
@@ -38,6 +42,30 @@
 	]).	
 	
 appname() -> ?APPLICATIONNAME.
+
+invalid_pidnames(undefined) ->
+	[];
+invalid_pidnames(List) when is_list(List) ->
+	{ok,RE} = re:compile(?PIDRE),
+	invalid_pidnames1(List,RE,[]).
+	
+invalid_pidnames1([],_,AccIn) ->
+	AccIn;
+invalid_pidnames1([H|T],RE,AccIn) ->
+	Val = case is_binary(H) of
+		true -> binary_to_list(H);
+		false -> H
+	end,
+	case re:run(Val,RE) of
+		{match, _} -> invalid_pidnames1(T,RE,AccIn);
+		nomatch -> invalid_pidnames1(T,RE,[H] ++ AccIn)
+	end.
+	
+valid_pidname(String) when is_binary(String) ->
+	valid_pidname(binary_to_list(String));
+valid_pidname(String) when is_list(String) ->
+	{ok,RE} = re:compile(?PIDRE),
+	re:run(String,RE).
 
 get_param(ParamName) ->
 	case application:get_env(?APPLICATIONNAME, ParamName) of
@@ -79,6 +107,18 @@ load_file(LoadFunction, Path,FileLoc) ->
 			lager:info("An error occurred reading the file - ~p",[Value]),
 			{Path, error}
 	end.	
+	
+invalid_eps(undefined) ->
+	[];
+invalid_eps(List) when is_list(List) ->
+	lists:foldl(fun(E,AccIn) -> 
+				 case valid_ep(E,nothing) of
+					true -> AccIn;
+					false -> [E] ++ AccIn
+				 end
+				end,
+				[],
+				List).
 	
 valid_ep(EPAddress,_) when is_binary(EPAddress) ->
 	valid_ep(binary_to_list(EPAddress), nothing);

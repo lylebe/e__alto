@@ -22,7 +22,7 @@
 -module(epcostservices).
 
 -export([init/0,
-		 %%get_eps/2,
+		 get_eps/2,
 		 store_eps/3,
 		 load_defaults/0,
 		 validate_semantics/1
@@ -110,6 +110,13 @@ removeResource(FilterPath, Metric) ->
 %%
 %% @doc Gets a EP Cost Document
 %%
+get_eps(Path, Filter) ->
+	case is_valid_filter(Filter) of 
+		{false, _, _, _} ->
+			nothing;
+		{true, Body, Constraints} ->
+			lager:info("Need to do something",[])
+	end.
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Validation 
@@ -119,4 +126,6 @@ removeResource(FilterPath, Metric) ->
 validate_semantics(Costmap) ->
 	costmap_utils:validate_Xcostmap(Costmap,{<<"endpoint-cost-map">>},fun utils:valid_ep/2,nothing).
 
-
+%% Request Validation
+is_valid_filter(Filter) ->
+	costmap_utils:is_valid_filter(Filter, "endpoints", fun utils:invalid_eps/1).
