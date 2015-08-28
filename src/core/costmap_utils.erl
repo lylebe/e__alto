@@ -25,7 +25,7 @@
 -export([	
 	validate_Xcostmap/4,
 	is_valid_filter/3,
-	filter_Xcostmap/4
+	filter_Xcostmap/5
 	]).
 
 -include("e_alto.hrl").
@@ -214,7 +214,7 @@ validate_Xcost_values([{DstId,_}=Attribute|T],SrcId,CostMode,VF,VFArgs,ErrorList
 %%
 %% @doc Retrieves Information based upon the JSON provided request.  
 %% 	
-filter_Xcostmap(Path, InputParameters, PathPrefix, ValidationFunction) ->
+filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction) ->
 	case is_valid_filter(InputParameters, PathPrefix, ValidationFunction) of 
 		{true, Body, Constraints} ->
 			CostMetric = ej:get({"cost-type","cost-metric"},Body),
@@ -233,39 +233,66 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, ValidationFunction) ->
 							{not_found, "Although the Filter request is valid the Costmap could not be located"};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
+							%%full_report([Path, InputParameters, PathPrefix, MapPrefix,
+							%%				ej:get({PathPrefix,"srcs"},Body),
+							%%				ej:get({PathPrefix,"dsts"},Body),
+							%%				Constraints]),
+							{_Hits, _Misses} = filter_sources( ej:get({PathPrefix,"srcs"},Body), 
+																ej:get({PathPrefix,"dsts"},Body), 
+																Constraints,
+																_CostMap,
+																{[],[]},
+																MapPrefix),
+						    %%lager:info("Misses are ~p",[_Misses]),
 							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
 															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
-										   {<<"cost-map">>, filter_sources( ej:get({PathPrefix,"srcs"},Body), 
-																			ej:get({PathPrefix,"dsts"},Body), 
-																			Constraints,
-																			_CostMap,
-																			[]) }]}
+										   {<<"cost-map">>, _Hits}]}
 					end
 			end;
 		{false, ConstraintErrors, SrcErrors, DstErrors} ->
 			{error, ConstraintErrors, SrcErrors, DstErrors} 
 	end. 
 
-filter_sources(undefined,Dsts,Constraints,CostMap,[]) ->
-	{struct, Pids} = ej:get({"cost-map"},CostMap),
-	{_,_,_Result} = lists:foldl(fun(E,{_Dsts,_Constraints,List}) -> {_Dsts, _Constraints, filter_dest(undefined,E,_Dsts,_Constraints,List)} end, {Dsts,Constraints,[]}, Pids),
-	_Result;
-filter_sources([],_,_,_,AccIn) ->
+full_report(List) when is_list(List) ->
+	lager:info("Reporting~n~n",[]),
+	lists:all(fun(E) -> lager:info("~p~n",[E]), true end, List),
+	lager:info("~n",[]).
+
+filter_sources(undefined,Dsts,Constraints,CostMap,{AccIn,Misses},MapPrefix) ->
+	{struct, Pids} = ej:get({MapPrefix},CostMap),
+	{_,_,_Results,_Misses} = lists:foldl(fun({E,Val},{_Dsts,_Constraints,List,_Misses}) -> 
+											{_X,_Y} = filter_dest(E,Val,_Dsts,_Constraints,List),
+											_Z = case length(_Y) of
+												0 -> _Misses;
+												_ ->  [{src,E,dsts,_Y}] ++ _Misses
+											end,
+											{_Dsts, _Constraints, _X, _Z}
+										 end, 
+								{Dsts,Constraints,AccIn,Misses}, 
+								Pids),
+	full_report(["Returning",_Results,_Misses]),
+	{_Results,_Misses};
+filter_sources([],_,_,_,AccIn,_) ->
 	AccIn;
-filter_sources([H|T],Dsts,Constraints,CostMap,AccIn) ->
-	case ej:get({"cost-map",H},CostMap) of
+filter_sources([H|T],Dsts,Constraints,CostMap,{AccIn,Misses},MapPrefix) ->
+	case ej:get({MapPrefix,H},CostMap) of
 		undefined ->
-			filter_sources(T,Dsts,Constraints,CostMap,AccIn);
+			filter_sources(T,Dsts,Constraints,CostMap,{AccIn,[{src,H,dsts,all}]++Misses},MapPrefix);
 		{struct, Attrs} ->
-			filter_sources(T,Dsts,CostMap,Constraints, filter_dest(H, {struct,Attrs}, Dsts, Constraints, AccIn))
+			{NewAccIn,_NewMisses} = filter_dest(H, {struct,Attrs}, Dsts, Constraints, AccIn),
+			_NextMisses = case length(_NewMisses) of
+				0 -> Misses;
+				_ -> [{src,H,dsts,_NewMisses}] ++ Misses
+			end,
+			filter_sources(T,Dsts,Constraints,CostMap,{NewAccIn,_NextMisses},MapPrefix)
 	end.
 	
 filter_dest(undefined,{Name,{struct,Attrs}},DstsFilter,Constraints,AccIn) ->
 	filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AccIn);
-filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AccIn) ->
+filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AttrList) ->
 	case filter_destinations(Attrs,DstsFilter,Constraints,[]) of 
-		[] -> AccIn;
-		AttList -> [{Name, {struct, AttList}}] ++ AccIn
+		{[],Misses} -> {AttrList,Misses};
+		{AttList,Misses} -> {[{Name, {struct, AttList}}] ++ AttrList, Misses}
 	end.	
 	
 filter_destinations([{_,Val}=H|T],undefined,Constraints,AccIn) ->
@@ -275,12 +302,18 @@ filter_destinations([{_,Val}=H|T],undefined,Constraints,AccIn) ->
 	end;
 filter_destinations(Dsts,[],Constraints,_) ->
 	filter_destinations(Dsts,undefined,Constraints,[]);
-filter_destinations([],_,_,AccIn) ->
-	AccIn;
+filter_destinations([],undefined,_,AccIn) ->
+	{AccIn,[]};
+filter_destinations([],MissedElements,_,AccIn) ->
+	{AccIn,MissedElements};
 filter_destinations([{Dest,Val}|T],DestsFilter,Constraints,AccIn) ->
+	%%full_report(["Filter Destinations",Dest,Val,DestsFilter,Constraints,AccIn,T,"----"]),
 	case (lists:member(Dest,DestsFilter) andalso (meets_criteria(Constraints,Val))) of
-		false -> filter_destinations(T,DestsFilter,Constraints,AccIn);
-		true -> filter_destinations(T,DestsFilter,Constraints,[{Dest,Val}]++AccIn)
+		false -> 
+			filter_destinations(T,DestsFilter,Constraints,AccIn);
+		true ->
+			_NewDests = lists:delete(Dest,DestsFilter),
+			filter_destinations(T,_NewDests,Constraints,[{Dest,Val}]++AccIn)
 	end.
 	
 meets_criteria([], _) ->

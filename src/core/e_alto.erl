@@ -53,6 +53,7 @@ init() ->
 	_DefaultCostMaps = costmapservices:load_defaults(),
 	_RouteList1 = lists:foldl(fun(E,AccIn) -> add_route_info(costmap, E, AccIn) end, _DefaultRouteList, _DefaultCostMaps),
 	_DefaultEPSPaths = endpointservices:load_defaults(),
+	lager:info("Return value for load_defaults call was ~p",[_DefaultEPSPaths]),
 	_RouteList2 = lists:foldl(fun(E2,AccIn2) -> add_route_info(eps, E2, AccIn2) end, _RouteList1, _DefaultEPSPaths),
 
 	e_alto_backend:set_constant(<<"routelist">>, _RouteList2),

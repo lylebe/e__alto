@@ -79,20 +79,18 @@ get_param(ParamName) ->
 
 load_defaults(Identifier, FilePath, LoadFunction) ->
 	lager:info("~p--Load ~p Defaults --Starting Load",[?MODULE, Identifier]),
-	_List = load_files( get_param(FilePath), LoadFunction, [] ),
+	_List = load_files( get_param(FilePath), LoadFunction, []),
 	lager:info("~p--Load ~p Defaults--Completed",[?MODULE, Identifier]),
-	_List.
+	_List.	
 
 load_files({_,[]},_,AccIn) ->
 	AccIn;
 load_files(undefined,_,[]) ->
 	[];
 load_files({Path,[H|T]=FileLocs}, LoadFunction, AccIn) when is_list(FileLocs) ->
-	load_file(LoadFunction,Path,H),
-	load_files({Path,T}, LoadFunction, AccIn);
-load_files({Path,FileLoc}, LoadFunction, AccIn) ->
-	load_file(LoadFunction,Path,FileLoc),
-	[{Path,FileLoc}] ++ AccIn.
+	load_files({Path,T}, LoadFunction, [load_file(LoadFunction,Path,H)] ++ AccIn);
+load_files({Path,FileLoc}, LoadFunction, _) ->
+	[load_file(LoadFunction,Path,FileLoc)].
 
 load_file(LoadFunction, Path,FileLoc) ->
 	lager:info("~p--Load File-- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
