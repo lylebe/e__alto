@@ -90,15 +90,19 @@ valid_constraint(Condition,Units) when is_binary(Condition) ->
 	valid_constraint(binary_to_list(Condition), Units);
 valid_constraint(Condition,Units) when is_atom(Units) ->
 	[_Operator, _Value] = string:tokens(Condition, " "),
-	{_ValType,_NumValue} = to_unit(_Value),
-	case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
-		false -> {false, invalid_format};
-		true -> 
-			case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
-				true -> {true, {list_to_atom(_Operator), _NumValue}};
-				false -> {false, value_type_mismatch}
-			end
-	end. 
+	case (_Operator == "finegrain") of 
+		true -> { fine_grain, 1.0 };
+		false ->
+			{_ValType,_NumValue} = to_unit(_Value),
+			case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
+				false -> {false, invalid_format};
+				true -> 
+					case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
+						true -> {true, {list_to_atom(_Operator), _NumValue}};
+						false -> {false, value_type_mismatch}
+					end
+			end 
+	end.
 
 %%
 %% @doc Coverts the string value to the appropriate units value.  This
@@ -233,25 +237,32 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 							{not_found, "Although the Filter request is valid the Costmap could not be located"};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
-							%%full_report([Path, InputParameters, PathPrefix, MapPrefix,
-							%%				ej:get({PathPrefix,"srcs"},Body),
-							%%				ej:get({PathPrefix,"dsts"},Body),
-							%%				Constraints]),
 							{_Hits, _Misses} = filter_sources( ej:get({PathPrefix,"srcs"},Body), 
 																ej:get({PathPrefix,"dsts"},Body), 
 																Constraints,
 																_CostMap,
 																{[],[]},
 																MapPrefix),
-						    %%lager:info("Misses are ~p",[_Misses]),
+							_FinalResult = case search_coarsegrained(MapPrefix, Constraints) of
+								false -> _Hits;
+								true -> _Hits %% TODO - Add coarse grained searches
+							end,
 							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
 															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
-										   {<<"cost-map">>, _Hits}]}
+										   {<<"cost-map">>, _FinalResult}]}
 					end
 			end;
 		{false, ConstraintErrors, SrcErrors, DstErrors} ->
 			{error, ConstraintErrors, SrcErrors, DstErrors} 
 	end. 
+	
+search_coarsegrained("cost-map", _) ->
+	false;
+search_coarsegrained("endpoint-cost-map", Constraints) ->
+	case lists:keyfind(fine_grain, 1, Constraints) of
+		false -> false;
+		_ -> true
+	end.
 
 full_report(List) when is_list(List) ->
 	lager:info("Reporting~n~n",[]),
@@ -307,7 +318,6 @@ filter_destinations([],undefined,_,AccIn) ->
 filter_destinations([],MissedElements,_,AccIn) ->
 	{AccIn,MissedElements};
 filter_destinations([{Dest,Val}|T],DestsFilter,Constraints,AccIn) ->
-	%%full_report(["Filter Destinations",Dest,Val,DestsFilter,Constraints,AccIn,T,"----"]),
 	case (lists:member(Dest,DestsFilter) andalso (meets_criteria(Constraints,Val))) of
 		false -> 
 			filter_destinations(T,DestsFilter,Constraints,AccIn);
@@ -325,7 +335,8 @@ meets_criteria([{Operator,Discriminator}|T], Value) ->
 		ge -> Value >= Discriminator;
 		ne -> Value =/= Discriminator;
 		lt -> Value < Discriminator;
-		gt -> Value > Discriminator
+		gt -> Value > Discriminator;
+		fine_grain -> true
 	end,
 	case _TestResult of
 		false -> false;
