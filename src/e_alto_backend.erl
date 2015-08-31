@@ -44,7 +44,9 @@
 	refresh_latest_version/1,	
 	set_constant/2,
 	get_constant/1,
-	delete_constant/1
+	delete_constant/1,
+	add_to_set/2,
+	remove_from_set/2
  ]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%
@@ -61,6 +63,17 @@ init() ->
 set_constant(K,V) -> etscommon:set(?CONSTTBL,?COMMONTBLOPTS,K,V).
 get_constant(K) -> etscommon:get_value(?CONSTTBL,?COMMONTBLOPTS,K).
 delete_constant(K) -> etscommon:delete(?CONSTTBL,?COMMONTBLOPTS,K).
+add_to_set(K,V) ->
+	_NewVal = case get_constant(K) of
+		not_found -> [K];
+		_Val -> [K] ++ _Val
+	end,
+	set_constant(K,_NewVal).
+remove_from_set(K,V) ->
+	set_constant(K, lists:delete(V)).
+	 
+	
+	
  
 get_resource_type(ApplicationString) ->
 	MediaTypes = [ { "application/alto-networkmap+json", networkmap },

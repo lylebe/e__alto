@@ -25,10 +25,19 @@
 -export([	
 	validate_Xcostmap/4,
 	is_valid_filter/3,
-	filter_Xcostmap/5
+	is_registered/3,
+	filter_Xcostmap/5,
+	generate_path/2,
+	generate_path/3
 	]).
 
 -include("e_alto.hrl").
+
+%%
+%% @doc Determines if BasePath/CostMode/CostMetric is registered as a path
+%%
+is_registered(BasePath, CostMode, CostMetric) ->
+	registry:is_registered(generate_path(BasePath, CostMode, CostMetric)).
 
 %%%%%%%%%%%%%%%%%%%%
 %%
@@ -121,7 +130,6 @@ to_unit(L) when is_list(L) ->
 	end.
 
 %%
-%% INTERNAL FUNCTION
 %% Generates a URI Path based upon the CostMode and CostMetric.
 %%
 generate_path(CostMode, CostMetric) when is_binary(CostMode) -> 
@@ -132,7 +140,6 @@ generate_path(CostMode, CostMetric) when is_list(CostMode) andalso is_list(CostM
 	CostMode ++ "/" ++ CostMetric.
 	
 %%
-%% INTERNAL FUNCTION
 %% Generates a Path given the base path and metric information
 %%
 generate_path(BasePath, CostMode, CostMetric) ->

@@ -28,23 +28,12 @@
 		 validate_semantics/1,
 		 get_costmap/1, 
 		 get_costmap/2, 
-		 
 		 get_costmap_by_path/3,
 		 get_costmap_by_path/4,
 
-		 is_registered/3,
-
-		 get_id_for_path/3,
-		 
 		 filter_costmap/2,
-
-		 register_mapping/3,
-		 register_mapping/4,
-		 deregister_mapping/3,
-		 
 		 store_costmap/2,
 		 load_costmap/1,
-		 
 		 load_defaults/0
 		]).
 
@@ -124,30 +113,13 @@ store_costmap(Path,JSON) ->
 			Error
 	end.
 
-%%
-%% Filter Info - This is a list of {MetricInformation, ResourceId} entries where
-%% - MetricInformation is the parsed Meta inforamatio of the metric
-%% - ResourceId is the internal ResourceId associated with the cost map
-%%
-contains_filterspec(undefined, _, _) ->
-	{false, nothing};
-contains_filterspec([], _, _) ->
-	{false, nothing};
-contains_filterspec([{ {_,MetaInfo},_ResourceId}|T], CostMetric, CostMode) ->
-	lager:info("~p is the value",[MetaInfo]),
-	case ((ej:get({<<"cost-metric">>},MetaInfo) == CostMetric) and
-		  (ej:get({<<"cost-mode">>},MetaInfo) == CostMode)) of
-		true -> {true, _ResourceId };
-		false -> contains_filterspec(T, CostMetric, CostMode)
-	end.
-
 get_costmap(Path, CostMetric, CostMode) ->
-	case get_filterinfo(Path) of
+	case costmap_utils:get_filterinfo(Path) of
 		not_found ->
 			lager:info("Error - No filter information found for Path ~p",[Path]),
 			not_found;
 		_FilterInfo ->			
-			case contains_filterspec(_FilterInfo, CostMetric, CostMode) of
+			case costmap_utils:contains_filterspec(_FilterInfo, CostMetric, CostMode) of
 				{false, nothing} ->
 					lager:info("No filter specification found for ~p that matches CostMode/CostMetric in request",[Path]),
 					{ not_found, "No matching filter specification found"};
@@ -156,39 +128,6 @@ get_costmap(Path, CostMetric, CostMode) ->
 			end
 	end.
 
-get_filterinfo(Path) when is_binary(Path) ->
-	{_,Spec}=e_alto_backend:get_constant(<< Path/bitstring, << ?FILTEREXT >>/ bitstring >>),
-	Spec;
-get_filterinfo(Path) when is_list(Path) ->
-	{_,Spec}=e_alto_backend:get_constant(list_to_binary(Path ++ ?FILTEREXT)),
-	Spec.
-
-%%
-%% Internally, paths of URIs are mapped to costmaps.
-%%  
-%% When a CostMap is added to the system a path on the server
-%% is auto generated of the form 
-%%
-%%  	{Path of URI used to POST}/{CostMode}/{CostType}
-%%
-%% If a URI was supplied when the CostMap is registered it is stored
-%% in the backend using the URI otherwise the generated path is used.
-%%
-%% When the resource is added 
-%% a. the base path is added to a CostMap URI Table (Path => ResourceID)
-%%	(if it was supplied)
-%% b. the generated path is added to the CostMap URI Table (always)
-%%
-%% This module supports CostMap Versions
-%%
-%% The CostMap Filter Service API allows adding cost maps IF
-%% it uses the same network-map in its dependent vtags.
-%% Add it generates an alias mapping.  
-%%
-%% If a costmap with a different base path already exists but 
-%% another should replace it, then a force map option is available.
-%% 
- 
 %%
 %% @doc Performs initialization tasks for this module.
 %%
@@ -214,63 +153,13 @@ get_costmap(MapIdentifier, Vtag) ->
 %% @doc Gets a CostMap by retrieving the generated URI Path
 %%
 get_costmap_by_path(BasePath,CostMode, CostMetric) ->
-	registry:get_resource_by_path(generate_path(BasePath, CostMode, CostMetric)).
+	registry:get_resource_by_path(costmap_utils:generate_path(BasePath, CostMode, CostMetric)).
 
 %%
 %% @doc Gets a CostMap by retrieving the generated URI Path and Tag
 %%
 get_costmap_by_path(BasePath,CostMode, CostMetric, Tag) ->
-	registry:get_resource_by_path(generate_path(BasePath, CostMode, CostMetric),Tag).
-	
-%%
-%% @doc Determines if BasePath/CostMode/CostMetric is registered as a path
-%%
-is_registered(BasePath, CostMode, CostMetric) ->
-	registry:is_registered(generate_path(BasePath, CostMode, CostMetric)).
-
-%%
-%% @doc Gets the Resource ID for the BasePath/CostMode/CostMetric path
-%%
-get_id_for_path(BasePath, CostMode, CostMetric) ->
-	registry:get_resourceid_for_path(generate_path(BasePath, CostMode, CostMetric)).
-	
-%%
-%% INTERNAL FUNCTION
-%% Generates a URI Path based upon the CostMode and CostMetric.
-%%
-generate_path(CostMode, CostMetric) when is_binary(CostMode) -> 
-	generate_path(binary_to_list(CostMode), CostMetric);
-generate_path(CostMode, CostMetric) when is_binary(CostMetric) ->
-	generate_path(CostMode, binary_to_list(CostMetric));
-generate_path(CostMode, CostMetric) when is_list(CostMode) andalso is_list(CostMetric) ->
-	CostMode ++ "/" ++ CostMetric.
-	
-%%
-%% INTERNAL FUNCTION
-%% Generates a Path given the base path and metric information
-%%
-generate_path(BasePath, CostMode, CostMetric) ->
-		BasePath ++ "/" ++ generate_path(CostMode, CostMetric).	
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Costmap Specific Registration Functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% @doc Adds Mappings of the Base Path and the auto-generated
-%% path to the Resrouce Id.
-%% 
-register_mapping(ResourceId, BasePath, CostMode, CostMetric) ->
-	registry:add_uri_mapping(ResourceId, ResourceId),
-	registry:add_uri_mapping(generate_path(BasePath, CostMode, CostMetric),ResourceId),
-	ResourceId. 
-
-register_mapping(BasePath, CostMode, CostMetric) ->
-	_GeneratedPath = generate_path(BasePath, CostMode, CostMetric),
-	registry:add_uri_mapping(_GeneratedPath, _GeneratedPath),
-	_GeneratedPath.
-
-deregister_mapping(BasePath, CostMode, CostMetric) ->
-	registry:deregister_mapping(generate_path(BasePath, CostMode, CostMetric)).
+	registry:get_resource_by_path(costmap_utils:generate_path(BasePath, CostMode, CostMetric),Tag).	
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Validation 
@@ -285,7 +174,7 @@ get_pids_fromMap(NetworkMap) ->
 
 %%% Cost Map validation support.
 validate_semantics(Costmap) ->
-	%% STEP 1 - Get Reference Map
+	%% Get the referenced Map
 	_MapId = ej:get({"meta","dependent-vtags",1,"resource-id"},Costmap),
 	_Tag = ej:get({"meta","dependent-vtags",1,"tag"},Costmap),
 	case e_alto_backend:get_item(_MapId,_Tag) of 
@@ -300,7 +189,6 @@ validate_semantics(Costmap) ->
 %%%%%%%%%%%%%%%%%%%%
 %% Filtering
 %%%%%%%%%%%%%%%%%%%%
-
 is_valid_filter(Filter) ->
 	costmap_utils:is_valid_filter(Filter, "pids", fun utils:invalid_pidnames/1).
 

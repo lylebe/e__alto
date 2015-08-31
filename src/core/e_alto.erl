@@ -24,7 +24,7 @@
 -module(e_alto).
 
 %% Application callbacks
--export([start/0, start/2, stop/1, init/0, load_application/0]).
+-export([start/0, start/2, stop/1, init/0]).
 
 -include ("e_alto.hrl").
 

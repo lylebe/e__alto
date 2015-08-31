@@ -29,14 +29,8 @@
 		 pidroutes_tolist/6,
 		 set_map/2,
 		 load_default_map/0,
-		 is_schema_loaded/0,
-		 ets_table_exists/1,
-		 load_schema/0,
-		 validate_syntax/1,
-		 gen_path/0,
 		 gen_resource_entry/1,
 		 get_param/1,
-		 getIRD/0,
 		 set_default/1,
 		 is_valid_filter/1,
 		 filter_map/2
@@ -263,3 +257,4 @@ is_valid_filter(JSON) ->
 			lager:info("Filter did not pass weak validation check",[]),
 			{false, SomethingElse}
 	end.
+
