@@ -16,7 +16,7 @@
 %% @copyright Copyright 2015 Lyle Bertz
 %%
 %% This is a generic header file for common macros and defaults.
-%% 
+%%
 
 -compile([{parse_transform, lager_transform}]).
 
@@ -26,58 +26,3 @@
 
 -record(costmetric, { name, mode, metric, description=undefined }). 
 -record(resourceentry, { name, type, uri, mediatype, accepts=undefined, capabilities=undefined, uses=[] }).
-	
-commonvalidate(JSON,TypeName,SyntaxValidationFunction) ->
-	case weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			lager:info("~p passed weak validation test",[TypeName]),
-			_Res = SyntaxValidationFunction(Body),
-			lager:info("Will return ~p for syntax validation",[_Res]),
-			_Res;
-		SomethingElse -> 
-			lager:info("~p did not pass weak validation check",[TypeName]),
-			SomethingElse
-	end.	
-
-weak_validate_syntax(Body) when is_binary(Body) ->
-	weak_validate_syntax( binary_to_list(Body) );
-weak_validate_syntax(Body) when is_list(Body) ->
-	% STEP - Validate against ALTO Schema
-	try 
-	  ParsedBody = mochijson2:decode(Body),
-	  lager:info("Request is valid JSON - Passes Weak Validation Test",[]),
-	  {ok, ParsedBody}
-	catch 
-		error ->
-			lager:info("Invalid JSON Found",[]),
-			{error, 422, "422-1 Operation result create invalid JSON"}
-	end.	
-	
-updateIRD(IRD) ->
-	e_alto_backend:store(<<"IRD">>,{directory, IRD, undefined}).	
-
-updateResource(ResourceId, ApplicationType, Body, ApplicationState) ->
-	lager:info("Making a Store attempt",[]),
-	e_alto_backend:store(ResourceId, {ApplicationType,Body,ApplicationState}).
-		
-updateResource(ResourceId, Vtag, ApplicationType, Body, ApplicationState) ->
-	lager:info("Making a Store attempt",[]),
-	e_alto_backend:store(ResourceId, Vtag, {ApplicationType,Body,ApplicationState}).
-
-getIRD() ->
-	case registry:get_resource(<<"IRD">>) of
-		not_found -> %Initialize IRD;
-			updateIRD( {struct,[{<<"meta">>,{struct,[{<<"cost-types">>,{struct,[]}}] }},{<<"resources">>,{struct,[]}} ]} ),
-			getIRD();
-		Value -> Value
-	end.
-
-get_param(ParamName) ->
-	case application:get_env(?APPLICATIONNAME, ParamName) of
-		{ok, _Result} -> 
-			lager:info("~p value found = ~p", [atom_to_list(ParamName),_Result]),
-			_Result;
-		Else ->
-			lager:info("Parameter is not present - Received ~p",[Else]),
-			undefined
-	end.

@@ -30,7 +30,6 @@
 		 set_map/2,
 		 load_default_map/0,
 		 gen_resource_entry/1,
-		 get_param/1,
 		 set_default/1,
 		 is_valid_filter/1,
 		 filter_map/2
@@ -42,8 +41,8 @@
 
 load_default_map() ->
 	lager:info("~p--Load Default Map--Starting Load",[?MODULE]),
-	_DefMapLoc = get_param(defaultmaploc),
-	_DefMapPath = get_param(defaultmappath),
+	_DefMapLoc = utils:get_param(defaultmaploc),
+	_DefMapPath = utils:get_param(defaultmappath),
 	lager:info("~p--Load Default Map--Begin File Read",[?MODULE]),
 	{ok, _File} = file:read_file(_DefMapLoc),
 	lager:info("~p--Load Default Map--Read complete - Starting Storage",[?MODULE]),	
@@ -55,13 +54,13 @@ load_default_map() ->
 set_default(MapName) when is_list(MapName) ->
 	set_default( list_to_binary(MapName) );
 set_default(MapName) when is_binary(MapName) ->
-	updateIRD( ej:set({"meta","default-alto-network-map"}, getIRD(), MapName)),
+	registry:updateIRD( ej:set({"meta","default-alto-network-map"}, registry:getIRD(), MapName)),
 	e_alto_backend:set_constant(?DEFMAPKEY,MapName). 
 
 gen_resource_entry(Path) when is_binary(Path) ->
 	gen_resource_entry(binary_to_list(Path));	
 gen_resource_entry(Path) when is_list(Path) ->
-	_HostBase = get_param(hostbase),
+	_HostBase = utils:get_param(hostbase),
 	A = "{\"foo\" : {\n\t\"uri\" : \"" ++ _HostBase ++ "/" ++ Path ++ "\",\n\t\"media-type\" : \"application/alto-networkmap+json\"}}",
 	B = mochijson2:decode(A),
 	ej:get({<<"foo">>},B).
@@ -72,10 +71,10 @@ set_map(Path,JSON) ->
 			%%Get the ResourceId and tag
 			_ResourceId = ej:get({"meta","vtag","resource-id"},Map),
 			_Tag = ej:get({"meta","vtag","tag"},Map),
-			X = updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
+			X = registry:updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
 			%Step 2 - update IRD
 			_ResourceEntry = gen_resource_entry(Path),
-			updateIRD( ej:set({"resources",_ResourceId}, getIRD(), 
+			registry:updateIRD( ej:set({"resources",_ResourceId}, registry:getIRD(), 
 							_ResourceEntry) ),
 			%Step 3 - Add URI Mapping to Registry
 			lager:info("Path is ~p for ~p",[ej:get({<<"uri">>},_ResourceEntry),_ResourceEntry]),
@@ -179,7 +178,7 @@ pidroutes_tolist([{PidName,Attributes} | Tail], RoutesV4, RoutesV6, TreeInV4, Tr
 	pidroutes_tolist(Tail, _v4Routes ++ RoutesV4, _v6Routes ++ RoutesV6, NewV4Tree, NewV6Tree, NewDuplicates2).	
 
 validate(JSON) ->
-	commonvalidate(JSON,"Map",fun mapservices:validate_semantics/1). 
+	utils:commonvalidate(JSON,"Map",fun mapservices:validate_semantics/1). 
 
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->
@@ -242,7 +241,7 @@ validate_semantics(NetworkMap) ->
 %% @doc Validate a Map Filtering POST's body
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 is_valid_filter(JSON) ->
-	case weak_validate_syntax(JSON) of
+	case utils:weak_validate_syntax(JSON) of
 		{ok, Body} -> 
 			%lager:info("Value is ~p and test result is ~p~n",[ej:get({"pids"},Body), (ej:get({"pids"},Body) =/= undefined)]),
 			case (ej:get({"pids"},Body) =/= undefined) of

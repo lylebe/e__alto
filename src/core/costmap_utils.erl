@@ -44,7 +44,7 @@ is_registered(BasePath, CostMode, CostMetric) ->
 %% @doc Determines if the filter requested is valid.
 %%
 is_valid_filter(Filter, PathPrefix, ValidationFunction) ->
-	case weak_validate_syntax(Filter) of
+	case utils:weak_validate_syntax(Filter) of
 		{ok, Body} -> 
 			case (ej:get({"cost-type"},Body) =/= undefined) of
 				true -> 

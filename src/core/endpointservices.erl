@@ -23,7 +23,8 @@
 
 -export([
 	load_defaults/0,
-	ep_query/2
+	ep_query/2,
+	validate_semantics/1
 	]).
 	
 -define(EPDEFPATHID, epdefpath).	
@@ -34,21 +35,12 @@
 %%
 %% @doc A common validation function.
 %%
-commonvalidate(JSON) ->
-	case weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			lager:info("Passed weak validation test",[]),
-			_Res = validate_semantics(Body),
-			lager:info("Will return ~p for syntax validation",[_Res]),
-			_Res;
-		SomethingElse -> 
-			lager:info("Did not pass weak validation check",[]),
-			SomethingElse
-	end.
+validate(JSON) ->
+	utils:commonvalidate(JSON,"Endpoint Properties",fun endpointservices:validate_semantics/1).
 
 load_defaults() ->
 	Contents = utils:load_defaults("Endpoints", ?EPDEFFILES, fun store_endpoints/3),
-	set_default_epservice( get_param(?EPDEFPATHID) ),
+	set_default_epservice( utils:get_param(?EPDEFPATHID) ),
 	Contents.
 
 set_default_epservice(Path) ->
@@ -66,7 +58,7 @@ ep_query(Path,Body)	->
 	end.
 	
 validate_epquery(JSON) ->
-		case weak_validate_syntax(JSON) of
+		case utils:weak_validate_syntax(JSON) of
 		{ok, Body} -> 
 			lager:info("Map passed weak validation test",[]),
 			case (ej:get({"properties"},Body) =/= undefined) andalso (ej:get({"endpoints"},Body) =/= undefined) of
@@ -123,7 +115,7 @@ remove_endpoints(Path, JSON) ->
 	_Space = registry:get_resource_by_path(Path),
 	_NewSpace = remove_eps(_Space,JSON),
 	_SpaceResourceId = registry:get_resourceid_for_path(Path),
-	updateResource(_SpaceResourceId, eppropsIndex, _NewSpace, nothing).
+	registry:updateResource(_SpaceResourceId, eppropsIndex, _NewSpace, nothing).
 
 store_endpoints(Path,ResourceKey,Data) when is_list(Path) ->
 	store_endpoints(list_to_binary(Path),ResourceKey,Data);	
@@ -131,7 +123,7 @@ store_endpoints(Path,ResourceKey,Data) when is_list(ResourceKey) ->
 	store_endpoints(Path,list_to_binary(ResourceKey),Data);
 store_endpoints(Path,ResourceKey,Data) ->
 	%%STEP 1 - Validate
-	case commonvalidate(Data) of
+	case validate(Data) of
 		{ false, Errors, _ } -> 
 			lager:info("Errors found - ~p",[Errors]),
 			{error, "Invalid Request"};
@@ -147,7 +139,7 @@ store_endpoints(Path,ResourceKey,Data) ->
 					remove_eps(_Space,_OldJSON)
 			end,
 			
-			updateResource(ResourceKey, epprops, JSON, nothing),			
+			registry:updateResource(ResourceKey, epprops, JSON, nothing),			
 			
 			%%STEP 3 - Add the EPs to the Path
 			{struct, JSONAttrs} = ej:get({"endpoint-properties"},JSON),
@@ -161,7 +153,7 @@ store_endpoints(Path,ResourceKey,Data) ->
 					_NewId;
 				{_,Found} -> Found
 			end,
-			updateResource(_SpaceResourceId, eppropsIndex, _NewSpace, nothing),
+			registry:updateResource(_SpaceResourceId, eppropsIndex, _NewSpace, nothing),
 			{ok, ResourceKey, JSON}
 	end.
 	

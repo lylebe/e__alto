@@ -44,7 +44,7 @@
 
 load_defaults() ->
 	lager:info("~p--Loading Default Cost Maps--Starting Load",[?MODULE]),
-	lists:foldl(fun(E,AccIn) -> [load_costmap(E)] ++ AccIn end, [], get_param(?DEFCMAPS)).
+	lists:foldl(fun(E,AccIn) -> [load_costmap(E)] ++ AccIn end, [], utils:get_param(?DEFCMAPS)).
 	
 load_costmap({Path,FileLoc}) ->
 	lager:info("~p--Loading CostMap -- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
@@ -80,12 +80,12 @@ store_costmap(Path,JSON) ->
 			_CostMode = ej:get({"meta","cost-type","cost-mode"},Costmap),
 			_CostMetric = ej:get({"meta","cost-type","cost-metric"},Costmap),
 			_ResourceId = << _CostMode/bitstring, _CostMetric/bitstring >>,
-			updateResource(_ResourceId, _MapTag, costmap, Costmap, ApplicationState),
+			registry:updateResource(_ResourceId, _MapTag, costmap, Costmap, ApplicationState),
 			lager:info("Map ~p has been stored. Updating IRD",[_ResourceId]),
 			
 			%Step 2 - update IRD
 			_Metric = metrics:metric_to_record(_CostMode,_CostMetric),
-			_IRD0 = metrics:updateIRD(_Metric, getIRD()),		
+			_IRD0 = metrics:updateIRD(_Metric, registry:getIRD()),		
 			_ResourceEntry = resources:resource_to_record(costmap,
 							_ResourceId,
 							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path),
@@ -94,8 +94,8 @@ store_costmap(Path,JSON) ->
 							[ {<<"cost-type-names">>, [_Metric]} ],
 							[_MapId]),
 			_IRD1 = resources:updateIRD(_ResourceEntry,_IRD0),				
-			updateIRD( _IRD1 ),
-			lager:info("IRD Updated to ~n~n~p~n~n~n",[getIRD()]),
+			registry:updateIRD( _IRD1 ),
+			lager:info("IRD Updated to ~n~n~p~n~n~n",[registry:getIRD()]),
 
 			%Step 3 - Add URI Mapping to Registry
 			_Path = registry:extract_path(ej:get({<<"resources">>,_ResourceId,<<"uri">>},_IRD1)),
@@ -165,7 +165,7 @@ get_costmap_by_path(BasePath,CostMode, CostMetric, Tag) ->
 %% Validation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 validate(JSON) ->
-	commonvalidate(JSON,"CostMap",fun costmapservices:validate_semantics/1).
+	utils:commonvalidate(JSON,"CostMap",fun costmapservices:validate_semantics/1).
 
 get_pids_fromMap(NetworkMap) ->
 	%Get the PID Names - The Cost Map PIDS MUST come from the map

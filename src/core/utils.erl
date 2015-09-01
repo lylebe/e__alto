@@ -20,9 +20,6 @@
 %% @end
 -module(utils).
 
--define(APPLICATIONNAME, e_alto).
--define(PIDRE, "^[a-zA-Z0-9\-:_@.]{1,64}$").
-
 -export([
 	valid_pidname/1,
 	invalid_pidnames/1,
@@ -38,8 +35,40 @@
 	apply_attribute_filter/4,
 	load_defaults/3,
 	get_param/1,
-	appname/0
+	appname/0,
+	commonvalidate/3,
+	weak_validate_syntax/1
 	]).	
+	
+-include("e_alto.hrl").
+-define(PIDRE, "^[a-zA-Z0-9\-:_@.]{1,64}$").
+	
+	
+commonvalidate(JSON,TypeName,SyntaxValidationFunction) ->
+	case weak_validate_syntax(JSON) of
+		{ok, Body} -> 
+			lager:info("~p passed weak validation test",[TypeName]),
+			_Res = SyntaxValidationFunction(Body),
+			lager:info("Will return ~p for syntax validation",[_Res]),
+			_Res;
+		SomethingElse -> 
+			lager:info("~p did not pass weak validation check",[TypeName]),
+			SomethingElse
+	end.	
+	
+weak_validate_syntax(Body) when is_binary(Body) ->
+	weak_validate_syntax( binary_to_list(Body) );
+weak_validate_syntax(Body) when is_list(Body) ->
+	%Validate against ALTO Schema... Someday...
+	try 
+	  ParsedBody = mochijson2:decode(Body),
+	  lager:info("Request is valid JSON - Passes Weak Validation Test",[]),
+	  {ok, ParsedBody}
+	catch 
+		error ->
+			lager:info("Invalid JSON Found",[]),
+			{error, 422, "422-1 Operation result create invalid JSON"}
+	end.	
 	
 appname() -> ?APPLICATIONNAME.
 

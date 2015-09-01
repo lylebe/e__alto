@@ -56,6 +56,8 @@
 		
 		 get_resource/1, 
 		 get_resource/2, 
+		 updateResource/4,
+		 updateResource/5,
 		 
 		 get_resource_by_path/1,
 		 get_resource_by_path/2,
@@ -82,7 +84,7 @@ init() ->
 getIRD() ->
 	case registry:get_resource(<<"IRD">>) of
 		not_found -> %Initialize IRD;
-			updateIRD( {struct,[{<<"meta">>,{struct,[]}},{<<"resources">>,{struct,[]}}]} ),
+			updateIRD( {struct,[{<<"meta">>,{struct,[{<<"cost-types">>,{struct,[]}}] }},{<<"resources">>,{struct,[]}} ]} ),
 			getIRD();
 		Value -> Value
 	end.
@@ -220,3 +222,11 @@ remove_uri_mapping(K) ->
 %%
 urimap_table_init() ->
 	etscommon:init_table(?URIMAPTBL,?COMMONTBLOPTS).
+
+updateResource(ResourceId, ApplicationType, Body, ApplicationState) ->
+	lager:info("Making a Store attempt",[]),
+	e_alto_backend:store(ResourceId, {ApplicationType,Body,ApplicationState}).
+		
+updateResource(ResourceId, Vtag, ApplicationType, Body, ApplicationState) ->
+	lager:info("Making a Store attempt",[]),
+	e_alto_backend:store(ResourceId, Vtag, {ApplicationType,Body,ApplicationState}).
