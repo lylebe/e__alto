@@ -22,8 +22,8 @@
 -module(epcostservices).
 
 -export([init/0,
-		 get_eps/2,
-		 store_eps/3,
+		 filter_epcs/2,
+		 store_epcs/3,
 		 load_defaults/0,
 		 validate_semantics/1
 		 ]).
@@ -33,7 +33,7 @@
 -define(MIXED, mixedmode).
 -define(EPCSEFPATHID, epcsfpath).	
 -define(EPCSDEFFILES, epcsfiles).
--define(FILTEREXT,"info").
+-define(FILTEREXT,"filterinfo").
 
 -include("e_alto.hrl").
 		 
@@ -43,14 +43,14 @@
 init() -> ok.
 	
 load_defaults() ->
-	utils:load_defaults("Endpoint Costs", ?EPCSDEFFILES, fun epcostservices:store_eps/3).
+	utils:load_defaults("Endpoint Costs", ?EPCSDEFFILES, fun epcostservices:store_epcs/3).
 
 %%
 %% @doc Store a EP Cost Document - Only care about fine grained
 %%
-store_eps(Path, ResourceKey, JSON) when is_list(ResourceKey) ->
-	store_eps(Path, list_to_binary(ResourceKey), JSON);
-store_eps(Path, ResourceKey, JSON) ->
+store_epcs(Path, ResourceKey, JSON) when is_list(ResourceKey) ->
+	store_epcs(Path, list_to_binary(ResourceKey), JSON);
+store_epcs(Path, ResourceKey, JSON) ->
 	case utils:commonvalidate(JSON,"EPCostmap", fun epcostservices:validate_semantics/1) of
 		{ok, EPCostmap, ApplicationState} ->
 			%%Get the ResourceId
@@ -89,6 +89,8 @@ store_eps(Path, ResourceKey, JSON) ->
 				Value -> metrics:addToSet(_Metric, ResourceKey, Value)
 			end,
 			e_alto_backend:set_constant(_FilterKey, _NewValue),			
+	
+			%Step 5 - Add this costmap to the metric specific search space
 			
 			{ok, ResourceKey, EPCostmap};
 		Error ->
@@ -110,18 +112,12 @@ removeResource(FilterPath, Metric) ->
 %%
 %% @doc Gets a EP Cost Document
 %%
-get_eps(Path, Filter) ->
-	case is_valid_filter(Filter) of 
-		{false, _, _, _} ->
-			nothing;
-		{true, Body, Constraints} ->
-			lager:info("Need to do something here with ~p, ~p and ~p",[Path,Body,Constraints])
-	end.
+filter_epcs(Path, InputParameters) ->
+	costmap_utils:filter_Xcostmap(Path, InputParameters, "endpoints", "endpoint-cost-map", fun utils:invalid_eps/1).
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Validation 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 %%% Endpoint Cost Map validation support.
 validate_semantics(Costmap) ->
 	costmap_utils:validate_Xcostmap(Costmap,{<<"endpoint-cost-map">>},fun utils:valid_ep/2,nothing).

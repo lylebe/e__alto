@@ -352,9 +352,11 @@ meets_criteria([{Operator,Discriminator}|T], Value) ->
 
 get_filterinfo(Path) when is_binary(Path) ->
 	{_,Spec}=e_alto_backend:get_constant(<< Path/bitstring, << ?FILTEREXT >>/ bitstring >>),
+	lager:info("Spec is ~p",[Spec]),
 	Spec;
 get_filterinfo(Path) when is_list(Path) ->
 	{_,Spec}=e_alto_backend:get_constant(list_to_binary(Path ++ ?FILTEREXT)),
+lager:info("Spec is ~p",[Spec]),
 	Spec.
 
 %%

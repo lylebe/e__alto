@@ -13,10 +13,12 @@ Funcionality that has been tested
 - Map and Map Filter Services
 - Costmap and Costmap Filter Services (with constraint support)
 - Endpoint Property Service
+- Endpoint Cost Service (fine grained only)
 
 TODO
 - Returning RFC 7285 error messages
-- Endpoint Cost Service
+- Endpoint Cost Service (coarse grained search)
+- Reorganize Filters for coarse/fine grained values
 
 -----
 Install / Build

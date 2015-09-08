@@ -50,14 +50,18 @@ init() ->
 
 	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
 	_DefaultRouteList = [{map,Path},{ird,"/"}],
-	_DefaultCostMaps = costmapservices:load_defaults(),
-	_RouteList1 = lists:foldl(fun(E,AccIn) -> add_route_info(costmap, E, AccIn) end, _DefaultRouteList, _DefaultCostMaps),
-	_DefaultEPSPaths = endpointservices:load_defaults(),
-	lager:info("Return value for load_defaults call was ~p",[_DefaultEPSPaths]),
-	_RouteList2 = lists:foldl(fun(E2,AccIn2) -> add_route_info(eps, E2, AccIn2) end, _RouteList1, _DefaultEPSPaths),
-
-	e_alto_backend:set_constant(<<"routelist">>, _RouteList2),
-	lager:info("Final Route List is ~p",[_RouteList2]).
+	_ModulesToLoad = [ {costmap, fun costmapservices:load_defaults/0},
+					{eps, fun endpointservices:load_defaults/0},
+					{epcs, fun epcostservices:load_defaults/0} ],
+					
+	_Routes = lists:foldl(fun({ModuleType,LoadFunction},AccIn) ->
+							_DefaultPaths = LoadFunction(),
+							lists:foldl(fun(E,AccIn2) -> add_route_info(ModuleType, E, AccIn2) end, AccIn, _DefaultPaths)
+						  end,
+						  _DefaultRouteList,
+						  _ModulesToLoad),
+	e_alto_backend:set_constant(<<"routelist">>, _Routes),
+	lager:info("Final Route List is ~p",[_Routes]).
 
 add_route_info(_, {_,error}, List) ->
 	List;
@@ -124,6 +128,7 @@ compileRouteList(List) ->
 										ird -> ird_services;
 										costmap -> costmap_services;
 										eps -> ep_service;
+										epcs -> epcs_services;
 										UnknownValue ->
 											lager:info("An unknown type of ~p was referenced",[atom_to_list(UnknownValue)]),
 											throw({error,unknown_apptype})
@@ -131,4 +136,8 @@ compileRouteList(List) ->
 									[ {GoodPath, Handler, []} ] ++ AccIn
 								end,
 								[], List) },
+	lists:foreach(fun({Path,Handler,_}) -> 
+		lager:info("Path = ~p with Handler = ~p",[Path,atom_to_list(Handler)])
+	  end,
+	  element(2,Routes)),
 	cowboy_router:compile([ Routes ]).
