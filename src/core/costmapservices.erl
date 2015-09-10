@@ -109,8 +109,8 @@ store_costmap(Path,JSON) ->
 			end,
 			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {metrics:metric_to_EJSON(_Metric), _ResourceId} ]),
 			{ok, _ResourceId, Costmap};
-		Error ->
-			Error
+		{?ALTO_ERR, ErrCode, ErrMessage} ->
+			{?ALTO_ERR, ErrCode, ErrMessage}
 	end.
 
 get_costmap(Path, CostMetric, CostMode) ->

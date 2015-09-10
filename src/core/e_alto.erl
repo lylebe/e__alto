@@ -46,11 +46,11 @@ init() ->
 	lists:foreach(fun load_app/1, AppList),
 	application:load(e_alto),
 	e_alto_backend:init(),
-	{Path,_}=mapservices:load_default_map(),
 
 	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
-	_DefaultRouteList = [{map,Path},{ird,"/"}],
-	_ModulesToLoad = [ {costmap, fun costmapservices:load_defaults/0},
+	_DefaultRouteList = [{ird,"/"}],
+	_ModulesToLoad = [ {map, fun mapservices:load_defaults/0}, 
+					{costmap, fun costmapservices:load_defaults/0},
 					{eps, fun endpointservices:load_defaults/0},
 					{epcs, fun epcostservices:load_defaults/0} ],
 					
@@ -90,10 +90,6 @@ start(_StartType, _StartArgs) ->
 
 stop(_State) ->
     ok.
-
-load_defaults() ->
-	mapservices:load_default_map(),
-	endpointservices:load_defaults().
 
 add_route(AppType,Route) ->
 	process_route(AppType,Route,fun(AppTypeA,RouteA,List) ->  [{AppTypeA,RouteA}] ++ List end).

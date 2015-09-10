@@ -23,6 +23,22 @@
 
 -compile([{parse_transform, lager_transform},export_all]).
 
+errors_to_string([], _, AccIn) ->
+	AccIn;
+errors_to_string([H|T],Verbose,AccIn) ->
+	errors_to_string(T, Verbose, err_to_string(H,Verbose) ++ AccIn).
+
+err_to_string({duplicate,{R1,PID1},{_,PID2}},Verbose) ->
+	case Verbose of
+		true -> "Duplicate Entry Found " ++ R1 ++ " in " ++ PID1 ++ " AND " ++ PID2 ++ "~n";
+		false -> R1 ++ " in " ++ PID1 ++ " AND " ++ PID2 ++ "~n"
+	end;
+err_to_string({Overlap1,Overlap2}, Verbose) ->
+	case Verbose of
+		true -> "Overlapping Entries Found " ++ Overlap1 ++ " overlaps " ++ Overlap2 ++ "~n";
+		false -> Overlap1 ++ " overlaps " ++ Overlap2 ++ "~n"
+	end.	
+
 cidr_to_int(Cidr) when is_binary(Cidr) ->
 	cidr_to_int(binary_to_list(Cidr));
 cidr_to_int(Cidr) ->
@@ -86,7 +102,7 @@ ip_range(IPAddress, Mask) when is_integer(Mask) andalso Mask =< 128 andalso size
 	
 insert_route_interval([], IntervalTree, Errors) ->
 	{ IntervalTree, Errors };
-insert_route_interval([{Route,Pid1}=Head|T], IntervalTree, Errors) ->
+insert_route_interval([{Route,_}=Head|T], IntervalTree, Errors) ->
 	{RouteBase,Mask} = cidr_to_int(Route),
 	[L,H] = ip_range( RouteBase, Mask ),
 	try
@@ -95,7 +111,7 @@ insert_route_interval([{Route,Pid1}=Head|T], IntervalTree, Errors) ->
 	catch
 		error: { key_exists, _ } ->
 				insert_route_interval(T, IntervalTree,
-							[{duplicate,Head,Pid1, element(2,gb_trees:get([L,H],IntervalTree))}] ++ Errors)
+							[{duplicate,Head,element(2,gb_trees:get([L,H],IntervalTree))}] ++ Errors)
 	end.
 	
 set_max_value({_, {[_,_], {_,_}, _, _}=Root}, CurrentTree) ->	

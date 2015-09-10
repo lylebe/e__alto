@@ -34,15 +34,29 @@
 	apply_attribute_filter/3,
 	apply_attribute_filter/4,
 	load_defaults/3,
+	load_file/3,
 	get_param/1,
 	appname/0,
 	commonvalidate/3,
-	weak_validate_syntax/1
+	weak_validate_syntax/1,
+	field_present/3,
+	field_present/4
 	]).	
 	
 -include("e_alto.hrl").
 -define(PIDRE, "^[a-zA-Z0-9\-:_@.]{1,64}$").
 	
+field_present(EJPath,EJStructure,ErrorString,Acc) ->
+	case field_present(EJPath, EJStructure, ErrorString) of
+		true -> Acc;
+		Value -> [Value] ++ Acc
+	end.
+	
+field_present(EJPath, EJStructure, ErrorString) ->
+	case (ej:get(EJPath,EJStructure) =/= undefined) of
+		true -> true;
+		false -> {?ALTO_ERR, ?E_MISSING_FIELD, ErrorString}
+	end.
 	
 commonvalidate(JSON,TypeName,SyntaxValidationFunction) ->
 	case weak_validate_syntax(JSON) of
@@ -67,7 +81,7 @@ weak_validate_syntax(Body) when is_list(Body) ->
 	catch 
 		error ->
 			lager:info("Invalid JSON Found",[]),
-			{error, 422, "422-1 Operation result create invalid JSON"}
+			{?ALTO_ERR, ?E_SYNTAX, "Invalid JSON Found"}
 	end.	
 	
 appname() -> ?APPLICATIONNAME.
@@ -112,16 +126,27 @@ load_defaults(Identifier, FilePath, LoadFunction) ->
 	lager:info("~p--Load ~p Defaults--Completed",[?MODULE, Identifier]),
 	_List.	
 
+addTo(Val,AccIn) ->
+	case Val of 
+	 {Path,_,X} ->  [{Path,X}]++AccIn;
+	 {S1,S2} -> [{S1,S2}] ++ AccIn
+	end.
+
+load_files([],_,AccIn) ->
+	AccIn;
+load_files([{Path,FileLoc}|T],LoadFunction,AccIn) ->
+	load_files(T,LoadFunction, addTo( load_file(LoadFunction,Path,FileLoc), AccIn ));
 load_files({_,[]},_,AccIn) ->
 	AccIn;
 load_files(undefined,_,[]) ->
 	[];
 load_files({Path,[H|T]=FileLocs}, LoadFunction, AccIn) when is_list(FileLocs) ->
-	load_files({Path,T}, LoadFunction, [load_file(LoadFunction,Path,H)] ++ AccIn);
+	load_files({Path,T}, LoadFunction, addTo( load_file(LoadFunction,Path,H), AccIn ));
 load_files({Path,FileLoc}, LoadFunction, _) ->
-	[load_file(LoadFunction,Path,FileLoc)].
+	{Path,_,X} = load_file(LoadFunction,Path,FileLoc),
+	[{Path,X}].
 
-load_file(LoadFunction, Path,FileLoc) ->
+load_file(LoadFunction,Path,FileLoc) ->
 	lager:info("~p--Load File-- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
 	case file:read_file(FileLoc) of
 		{ok, _File} ->
@@ -129,7 +154,7 @@ load_file(LoadFunction, Path,FileLoc) ->
 			{ok, _ResourceId, X} = LoadFunction(Path,FileLoc,_File),
 			lager:info("~p--Load File-- Completed",[?MODULE]),
 			lager:info("Loaded Content -> ~n~n~p~n~n~n~n~n~n",[X]),
-			{Path, X};
+			{Path, _ResourceId, X};
 		{error, Value} ->
 			lager:info("An error occurred reading the file - ~p",[Value]),
 			{Path, error}

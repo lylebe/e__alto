@@ -93,8 +93,8 @@ store_epcs(Path, ResourceKey, JSON) ->
 			%Step 5 - Add this costmap to the metric specific search space
 			
 			{ok, ResourceKey, EPCostmap};
-		Error ->
-			Error
+		{?ALTO_ERR, ErrCode, ErrMessage} ->
+			{?ALTO_ERR, ErrCode, ErrMessage}
 	end.		
 		
 removeResource(FilterPath, Metric) ->

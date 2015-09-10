@@ -69,9 +69,9 @@ validate_epquery(JSON) ->
 					lager:info("Will return ~p for syntax validation",[Body]),
 					{ok, Body}
 			end;
-		SomethingElse -> 
+		{?ALTO_ERR, ErrCode, ErrMessage} ->
 			lager:info("Did not pass weak validation check",[]),
-			SomethingElse
+			{?ALTO_ERR, ErrCode, ErrMessage}
 	end.	
 	
 %%TODO - Go back to the map in the meta info IF the EP is part of a ep
@@ -124,6 +124,9 @@ store_endpoints(Path,ResourceKey,Data) when is_list(ResourceKey) ->
 store_endpoints(Path,ResourceKey,Data) ->
 	%%STEP 1 - Validate
 	case validate(Data) of
+		{?ALTO_ERR, ErrCode, ErrMessage} ->
+			lager:info("Errors found - ~p",[]),
+			{?ALTO_ERR, ErrCode, ErrMessage};
 		{ false, Errors, _ } -> 
 			lager:info("Errors found - ~p",[Errors]),
 			{error, "Invalid Request"};

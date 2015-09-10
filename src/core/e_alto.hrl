@@ -24,5 +24,11 @@
 -define(ALTOSCHEMAKEY, schema).
 -define(JESSE_ETS, jesse_ets).
 
+-define(E_SYNTAX, e_syntax).
+-define(E_MISSING_FIELD, e_missing_field).
+-define(E_INVALID_FIELD_TYPE, e_invalid_field_type).
+-define(E_INVALID_FIELD_VALUE, e_invalid_field_value).
+-define(ALTO_ERR, alto_error).
+
 -record(costmetric, { name, mode, metric, description=undefined }). 
 -record(resourceentry, { name, type, uri, mediatype, accepts=undefined, capabilities=undefined, uses=[] }).

@@ -26,30 +26,34 @@
 		 get_map_by_filter/2, 
 		 validate/1,
 		 validate_semantics/1,
+		 validate_request_semantics/1,
 		 pidroutes_tolist/6,
-		 set_map/2,
-		 load_default_map/0,
-		 gen_resource_entry/1,
+		 store_map/3,
+		 load_defaults/0,
 		 set_default/1,
 		 is_valid_filter/1,
 		 filter_map/2
 		]).
 
 -define(DEFMAPKEY, <<"defaultmap">>).
+-define(DEFMAP, defaultmap).
+-define(MAPSTOLOAD, maps).
 
 -include("e_alto.hrl").
 
+load_defaults() ->
+	_Val1 = load_default_map(),
+	[_Val1] ++ utils:load_defaults("Network Maps", ?MAPSTOLOAD, fun mapservices:store_map/3).
+
 load_default_map() ->
-	lager:info("~p--Load Default Map--Starting Load",[?MODULE]),
-	_DefMapLoc = utils:get_param(defaultmaploc),
-	_DefMapPath = utils:get_param(defaultmappath),
-	lager:info("~p--Load Default Map--Begin File Read",[?MODULE]),
-	{ok, _File} = file:read_file(_DefMapLoc),
-	lager:info("~p--Load Default Map--Read complete - Starting Storage",[?MODULE]),	
-	{ok, _ResourceId, X} = mapservices:set_map( string:sub_string(_DefMapPath,2),_File),
-	set_default(_ResourceId),
-	lager:info("~p--Load Default Map--Completed",[?MODULE]),
-	{_DefMapPath, X}.
+	{ _DefMapPath, _DefMapLoc } = utils:get_param(?DEFMAP),	
+	case utils:load_file( fun mapservices:store_map/3, _DefMapPath, _DefMapLoc ) of
+		{Path, _ResourceId, X} ->
+			set_default(_ResourceId),
+			{Path, X};
+		{Path, error} ->
+			{Path, error}
+	end.	
 
 set_default(MapName) when is_list(MapName) ->
 	set_default( list_to_binary(MapName) );
@@ -57,30 +61,31 @@ set_default(MapName) when is_binary(MapName) ->
 	registry:updateIRD( ej:set({"meta","default-alto-network-map"}, registry:getIRD(), MapName)),
 	e_alto_backend:set_constant(?DEFMAPKEY,MapName). 
 
-gen_resource_entry(Path) when is_binary(Path) ->
-	gen_resource_entry(binary_to_list(Path));	
-gen_resource_entry(Path) when is_list(Path) ->
-	_HostBase = utils:get_param(hostbase),
-	A = "{\"foo\" : {\n\t\"uri\" : \"" ++ _HostBase ++ "/" ++ Path ++ "\",\n\t\"media-type\" : \"application/alto-networkmap+json\"}}",
-	B = mochijson2:decode(A),
-	ej:get({<<"foo">>},B).
-
-set_map(Path,JSON) ->
+store_map(Path,_,JSON) ->
 	case validate(JSON) of
 		{ok, Map, V4ApplicationState, V6ApplicationState} ->
 			%%Get the ResourceId and tag
 			_ResourceId = ej:get({"meta","vtag","resource-id"},Map),
 			_Tag = ej:get({"meta","vtag","tag"},Map),
 			X = registry:updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
+
 			%Step 2 - update IRD
-			_ResourceEntry = gen_resource_entry(Path),
-			registry:updateIRD( ej:set({"resources",_ResourceId}, registry:getIRD(), 
-							_ResourceEntry) ),
+			_ResourceEntry = resources:resource_to_record(networkmap,
+				_ResourceId,
+				list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
+				[ <<"application/alto-networkmap+json">> ],
+				[],
+				[],
+				[]),
+			_IRD = resources:updateIRD(_ResourceEntry,registry:getIRD()),				
+			registry:updateIRD( _IRD ),
+			lager:info("IRD Updated to ~n~n~p~n~n~n",[registry:getIRD()]),
+
 			%Step 3 - Add URI Mapping to Registry
-			lager:info("Path is ~p for ~p",[ej:get({<<"uri">>},_ResourceEntry),_ResourceEntry]),
-			_Path = registry:extract_path(ej:get({<<"uri">>},_ResourceEntry)),
+			_Path = registry:extract_path(ej:get({<<"resources">>,_ResourceId,<<"uri">>},_IRD)),
 			lager:info("HTTP URI is ~p for Resource ~p",[_Path,_ResourceId]),
 			registry:add_uri_mapping(_Path,_ResourceId),
+
 			{ok, _ResourceId, X};
 		Error ->
 			Error
@@ -183,77 +188,57 @@ validate(JSON) ->
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->
 	%%Ensure the tag is set
-	case ej:get({"meta","vtag","resource-id"},NetworkMap) of
-		undefined ->
-			lager:info("No resource-id found",[]);
-		_ ->
-			ok
-	end,
-	
-	case ej:get({"meta","vtag","tag"},NetworkMap) of
-		undefined -> 
-			lager:info("No tag found",[]);
-		_->
-			ok
-	end,
+	_Errors1 = utils:field_present({"meta","vtag","resource-id"},NetworkMap,"#/meta/vtag/resource-id attribute was not present in Map",[]),
+	_Errors2 = utils:field_present({"meta","vtag","tag"},NetworkMap,"#/meta/vtag/tag attribute was not present in Map",_Errors1),	
+	case  utils:field_present({<<"network-map">>},NetworkMap,"#/network-map attribute was not present in Map") of
+		true ->
+			validate_mapbody(NetworkMap,_Errors2);
+		Error ->
+			[Error] ++ _Errors2
+	end.
 
+add_ifnotempty(Errors,ErrFun,Verbose,Type,SubType,Acc) ->
+	case length(Errors) of
+		0 -> Acc;
+		_ -> [{Type,SubType,ErrFun(Errors,Verbose,"")}] ++ Acc
+	end.
+	
+validate_mapbody(NetworkMap, AccErrors) ->
 	% We are looking for anwhere there is an overlap of routes that is not a containment
 	{struct, _Pids } = ej:get({<<"network-map">>}, NetworkMap),
 	
 	%Build the Route Structures for the condition checks
-	% Condition 1 - same route in two locations - how to resolve - Duplicate detection
-	% for insertion of the same key in a gb_tree.
+	% Condition 1 - same route in two locations - how to resolve - Duplicate detection for insertion of the same key in a gb_tree.
 	{ PidRoutesListV4, PidRoutesListV6, PidRoutesV4Tree, PidRoutesV6Tree, Duplicates } = pidroutes_tolist(_Pids, [], [], gb_trees:empty(), gb_trees:empty(), []),
-	
-	case length(Duplicates) of
-		0 -> lager:info("No exact duplicates found");
-		_ -> lager:info("Duplicates found - ~p", Duplicates)
-	end,
-	
-	% Condition 2 - partially overlapping routes (not an interval) - Interval Tree is used
-	% Convert RB tree (gb_tree) to interval tree
+	_AccErrors1 = add_ifnotempty(Duplicates, fun route_utils:errors_to_string/3, false, ?ALTO_ERR, ?E_INVALID_FIELD_VALUE, AccErrors),
+
+	% Condition 2 - partially overlapping routes (not proper containment relationship which is allowed) - Interval Tree is used
 	{_,IntervalV4Tree} = route_utils:set_max_value(PidRoutesV4Tree, PidRoutesV4Tree),
 	Overlaps = route_utils:detect_overlaps(IntervalV4Tree), 
-	case length(Overlaps) of
-		0 -> lager:info("No IPv4 CIDR overlaps found");
-		_ -> lager:info("CIDR IPv4 overlaps found - ~p", Overlaps)
-	end,	
+	_AccErrors2 = add_ifnotempty(Overlaps, fun route_utils:errors_to_string/3, false, ?ALTO_ERR, ?E_INVALID_FIELD_VALUE, _AccErrors1),
+
 	{_,IntervalV6Tree} = route_utils:set_max_value(PidRoutesV6Tree, PidRoutesV6Tree),
 	OverlapsV6 = route_utils:detect_overlaps(IntervalV6Tree), 
-	case length(OverlapsV6) of
-		0 -> lager:info("No IPv6 Prefix overlaps found");
-		_ -> lager:info("IPv6 Prefix overlaps found - ~p", OverlapsV6)
-	end,	
-	
+	_AccErrors3 = add_ifnotempty(OverlapsV6, fun route_utils:errors_to_string/3, false, ?ALTO_ERR, ?E_INVALID_FIELD_VALUE, _AccErrors2),
+
     % Last Task is to build a trie that can perform longest common subsquence of the route data	
-    case ((length(Duplicates)>0) or (length(Overlaps)>0) or (length(OverlapsV6)>0)) of
+    case (length(_AccErrors3) > 0) of 
 		false -> % build the prefix tree...
-			lager:info("Building NetworkMap Tries for Routing",[]),
 		    { ok, NetworkMap, 
 				route_utils:build_bitstring_trie( PidRoutesListV4, trie:new() ),
 				route_utils:build_bitstring_trie( PidRoutesListV6, trie:new() ) };
 		true ->
-			lager:info("Semantic violation - error will be returned",[]),
-			{error, 422, "422-4 Semantic Violation - Map did not pass semantic formats"}
+			_AccErrors3
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc Validate a Map Filtering POST's body
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 is_valid_filter(JSON) ->
-	case utils:weak_validate_syntax(JSON) of
-		{ok, Body} -> 
-			%lager:info("Value is ~p and test result is ~p~n",[ej:get({"pids"},Body), (ej:get({"pids"},Body) =/= undefined)]),
-			case (ej:get({"pids"},Body) =/= undefined) of
-				true -> 
-					lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),
-					{true, Body};
-				false -> 
-					lager:info("~p--Is Valid Filter- Error - pids attribute was not present",[?MODULE]),
-					{false, undefined}
-			end;
-		SomethingElse -> 
-			lager:info("Filter did not pass weak validation check",[]),
-			{false, SomethingElse}
-	end.
+	utils:commonvalidate(JSON,"Map",fun mapservices:validate_request_semantics/1). 
 
+validate_request_semantics(Request) ->
+	case utils:field_present({"pids"},Request,"#/pids attribute was not present in Map Filter Request") of 
+		true -> {true, Request};
+		Error -> Error
+	end.
