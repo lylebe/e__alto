@@ -124,6 +124,7 @@ filter_map(NetworkMap, InputParameters) ->
 	Z = ej:get({<<"pids">>},InputParameters),
 	Y = ej:get({<<"address-types">>},InputParameters),
 	lager:info("Input Parameters are ~p and ~p",[Z,Y]),
+
 	A = { struct, [{<<"meta">>, {struct, []}},	
 				   {<<"network-map">>, filter_pids( ej:get({<<"pids">>},InputParameters), 
 													 NetworkMap, 
@@ -188,9 +189,9 @@ validate(JSON) ->
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->
 	%%Ensure the tag is set
-	_Errors1 = utils:field_present({"meta","vtag","resource-id"},NetworkMap,"#/meta/vtag/resource-id attribute was not present in Map",[]),
-	_Errors2 = utils:field_present({"meta","vtag","tag"},NetworkMap,"#/meta/vtag/tag attribute was not present in Map",_Errors1),	
-	case  utils:field_present({<<"network-map">>},NetworkMap,"#/network-map attribute was not present in Map") of
+	_Errors1 = utils:field_present({"meta","vtag","resource-id"},NetworkMap,<<"#/meta/vtag/resource-id attribute was not present in Map">>,[]),
+	_Errors2 = utils:field_present({"meta","vtag","tag"},NetworkMap,<<"#/meta/vtag/tag attribute was not present in Map">>,_Errors1),	
+	case  utils:field_present({<<"network-map">>},NetworkMap,<<"#/network-map attribute was not present in Map">>) of
 		true ->
 			validate_mapbody(NetworkMap,_Errors2);
 		Error ->
@@ -238,7 +239,7 @@ is_valid_filter(JSON) ->
 	utils:commonvalidate(JSON,"Map",fun mapservices:validate_request_semantics/1). 
 
 validate_request_semantics(Request) ->
-	case utils:field_present({"pids"},Request,"#/pids attribute was not present in Map Filter Request") of 
+	case utils:field_present({"pids"},Request,<<"#/pids attribute was not present in Map Filter Request">>) of 
 		true -> {true, Request};
-		Error -> Error
+		Error -> {false, Error}
 	end.

@@ -40,11 +40,30 @@
 	commonvalidate/3,
 	weak_validate_syntax/1,
 	field_present/3,
-	field_present/4
+	field_present/4,
+	errors_toEJSON/1
 	]).	
 	
 -include("e_alto.hrl").
 -define(PIDRE, "^[a-zA-Z0-9\-:_@.]{1,64}$").
+	
+err_to_string(Atom) ->
+	case Atom of
+		?E_SYNTAX -> <<"sytnax">>; 
+		?E_MISSING_FIELD -> <<"missing field">>;
+		?E_INVALID_FIELD_TYPE -> <<"invalid field type">>;
+		?E_INVALID_FIELD_VALUE -> <<"invalid field value">>;
+		?ALTO_ERR -> <<"alto error">>;
+		_ -> list_to_binary(atom_to_list(Atom))
+	end.
+	
+errors_toEJSON(Errors) when is_list(Errors)->
+	_Attrs = lists:foldl(fun({?ALTO_ERR, Code, SyntaxError}, AccIn) -> 
+		 [ { <<"code">>, err_to_string(Code) }, { <<"syntax-error">>, SyntaxError } ] ++ AccIn
+		end, [], Errors),
+	{ struct, [{ <<"meta">>, [ { struct, _Attrs } ] }] };
+errors_toEJSON(Errors) ->
+	errors_toEJSON([Errors]).
 	
 field_present(EJPath,EJStructure,ErrorString,Acc) ->
 	case field_present(EJPath, EJStructure, ErrorString) of

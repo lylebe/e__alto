@@ -24,17 +24,22 @@
 		 content_types_provided/2,
 		 content_types_accepted/2,
 		 handle_map_get/2,
-		 handle_map_filter/2]).
+		 handle_map_filter/2,
+		 terminate/3]).
 
 init(_, _, _) ->
 	{upgrade, protocol, cowboy_rest}.
+
+terminate(_Reason, _Req, _State) ->
+  ok.
 
 allowed_methods(Req, State) ->
   	{[<<"GET">>, <<"POST">>], Req, State}.
 
 content_types_provided(Req, State) ->
 	{[
-		{{<<"application">>, <<"alto-networkmap+json">>, []}, handle_map_get}
+		{{<<"application">>, <<"alto-networkmap+json">>, []}, handle_map_get},
+  		{{<<"application">>, <<"alto-error+json">>, []}, handle_map_filter}
 	], Req, State}.
 
 content_types_accepted(Req, State) ->
@@ -56,6 +61,11 @@ handle_map_get(Req, State) ->
 	end,
 	{Body, Req2, State}.
 
+set_error(Errors,Req) ->
+	_Body = mochijson2:encode( utils:errors_toEJSON(Errors) ),
+	{ok,Req2} = cowboy_req:reply(400,[{<<"Content-Type">>,<<"application/alto-error+json">>}],_Body,Req),
+	Req2.
+
 % A map filter request
 handle_map_filter(Req, State) ->
 	io:format("~p--Map Filter POST Received~n", [?MODULE]),
@@ -63,21 +73,19 @@ handle_map_filter(Req, State) ->
 	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
 	{ok, Body, _} = cowboy_req:body(Req),
 	lager:info("Body received is ~p~n",[Body]),
-	%Validation
-	{RespBody, Req2} = case mapservices:is_valid_filter(Body) of
-		{false,_} -> 
-			{"", cowboy_req:reply(422,Req)};
+	%Validation & Processing
+	case mapservices:is_valid_filter(Body) of
+		{false,Errors} ->
+			{halt, set_error(Errors,Req), State};
 		{true, ParsedBody} ->
 			case registry:get_resourceid_for_path(_Path) of
 				not_found ->
 					lager:info("~p--Path Mapping not found for ~p~n",[?MODULE,_Path]),
-					{ok, cowboy_req:reply(404,Req)};
+					{false, cowboy_req:reply(404,Req), State};
 				{_, _ResourceId} ->
 					io:format("~p--Resource Id = ~p~n",[?MODULE,_ResourceId]),
 					_FilteredMap = mapservices:get_map_by_filter(_ResourceId,ParsedBody),
 					io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
-					{mochijson2:encode(_FilteredMap), Req}
+					{true, cowboy_req:set_resp_body(mochijson2:encode(_FilteredMap), Req), State}
 			end
-	end,
-	Req3 = cowboy_req:set_resp_body(RespBody,Req2),
-  	{true, Req3, State}.
+	end.
