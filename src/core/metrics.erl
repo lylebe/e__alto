@@ -28,7 +28,9 @@
 		  autogen_metricname/2,
 		  updateIRD/2,
 		  removeFromSet/2,
-		  addToSet/3
+		  addToSet/3,
+		  gen_metrics/1,
+		  get_metricnames/1
 		   ]).
 
 -include("e_alto.hrl").

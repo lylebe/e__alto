@@ -26,17 +26,22 @@
 		 content_types_provided/2,
 		 content_types_accepted/2,
 		 handle_costmap_get/2,
-		 handle_costmap_filter/2]).
+		 handle_costmap_filter/2,
+		 terminate/3]).
 
 init(_, _, _) ->
 	{upgrade, protocol, cowboy_rest}.
+	
+terminate(_Reason, _Req, _State) ->
+  ok.
 
 allowed_methods(Req, State) ->
   	{[<<"GET">>, <<"POST">>], Req, State}.
 
 content_types_provided(Req, State) ->
 	{[
-		{{<<"application">>, <<"alto-costmap+json">>, []}, handle_costmap_get}
+		{{<<"application">>, <<"alto-costmap+json">>, []}, handle_costmap_get},
+		{{<<"application">>, <<"alto-error+json">>, []}, handle_costmap_filter}
 	], Req, State}.
 
 content_types_accepted(Req, State) ->
@@ -67,12 +72,14 @@ handle_costmap_filter(Req, State) ->
 	lager:info("Body received it ~p~n",[Body]),
 	%Validation
 	{RespBody, Req2} = case costmapservices:filter_costmap(_Path,Body) of
+		{internal_error, IntErrorMessage} ->
+			{"", cowboy_req:reply(500,Req)};
 		{error, ErrMessage} ->
-			{"", cowboy_req:reply(422,Req)};
+			{"", cowboy_req:reply(400,Req)};
 		not_found ->
 			{"", cowboy_req:reply(404,Req)};			
-		{not_found, NFMessage} ->
-			{"", cowboy_req:reply(422,Req)};			
+		{not_found, NFMessage} ->  %% TODO - Add the NFMessage to the body
+			{"", cowboy_req:reply(404,Req)};			
 		_FilteredMap ->
 			io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
 			{mochijson2:encode(_FilteredMap), Req}

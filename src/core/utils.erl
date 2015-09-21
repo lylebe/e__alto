@@ -40,8 +40,10 @@
 	commonvalidate/3,
 	weak_validate_syntax/1,
 	field_present/3,
-	field_present/4,
-	errors_toEJSON/1
+	errors_toEJSON/1,
+	check_fields/1,
+	invalid_pidnames_asError/1,
+	invalid_eps_asError/1
 	]).	
 	
 -include("e_alto.hrl").
@@ -49,11 +51,11 @@
 	
 err_to_string(Atom) ->
 	case Atom of
-		?E_SYNTAX -> <<"sytnax">>; 
-		?E_MISSING_FIELD -> <<"missing field">>;
-		?E_INVALID_FIELD_TYPE -> <<"invalid field type">>;
-		?E_INVALID_FIELD_VALUE -> <<"invalid field value">>;
-		?ALTO_ERR -> <<"alto error">>;
+		?E_SYNTAX -> <<"E_SYNTAX">>; 
+		?E_MISSING_FIELD -> <<"E_MISSING_FIELD">>;
+		?E_INVALID_FIELD_TYPE -> <<"E_INVALIDE_FIELD_TYPE">>;
+		?E_INVALID_FIELD_VALUE -> <<"E_INVALID_FIELD_VALUE">>;
+		?ALTO_ERR -> <<"ALTO_ERROR">>;
 		_ -> list_to_binary(atom_to_list(Atom))
 	end.
 	
@@ -65,11 +67,13 @@ errors_toEJSON(Errors) when is_list(Errors)->
 errors_toEJSON(Errors) ->
 	errors_toEJSON([Errors]).
 	
-field_present(EJPath,EJStructure,ErrorString,Acc) ->
-	case field_present(EJPath, EJStructure, ErrorString) of
-		true -> Acc;
-		Value -> [Value] ++ Acc
-	end.
+check_fields(CheckList) when is_list(CheckList) -> 
+		lists:foldl(fun({EJPath,EJStruct,ErrMsg},AccIn) -> 
+			 case field_present(EJPath,EJStruct,ErrMsg) of
+				true -> AccIn;
+				Value -> [Value] ++ AccIn 
+			 end
+			end, [], CheckList).
 	
 field_present(EJPath, EJStructure, ErrorString) ->
 	case (ej:get(EJPath,EJStructure) =/= undefined) of
@@ -98,12 +102,26 @@ weak_validate_syntax(Body) when is_list(Body) ->
 	  lager:info("Request is valid JSON - Passes Weak Validation Test",[]),
 	  {ok, ParsedBody}
 	catch 
-		error ->
+		_:_ ->
 			lager:info("Invalid JSON Found",[]),
-			{?ALTO_ERR, ?E_SYNTAX, "Invalid JSON Found"}
+			{?ALTO_ERR, ?E_SYNTAX, <<"Invalid JSON Found">>}
 	end.	
 	
 appname() -> ?APPLICATIONNAME.
+
+invalid_pidnames_asError(List) when is_list(List) ->
+	case length(List) of 
+		0 -> nothing;
+		_ -> 
+		 _Items = pids2List(List,[]),
+		 _Errors = list_to_binary( string:join(_Items, ",") ),
+		 {?ALTO_ERR, ?E_INVALID_FIELD_TYPE, << <<"Pid Names are not Valid - [">>/binary, _Errors/binary, <<"]">>/binary >> }
+	end.
+		
+pids2List([Pid|L],Acc) when is_binary(Pid) ->
+	pids2List(L,[binary_to_list(Pid)] ++ Acc);
+pids2List([Pid|L],Acc) ->
+	pids2List(L, [Pid] ++ Acc).
 
 invalid_pidnames(undefined) ->
 	[];
@@ -177,6 +195,15 @@ load_file(LoadFunction,Path,FileLoc) ->
 		{error, Value} ->
 			lager:info("An error occurred reading the file - ~p",[Value]),
 			{Path, error}
+	end.	
+	
+invalid_eps_asError(List) when is_list(List) ->
+	case length(List) of 
+		0 -> nothing;
+		_ -> 
+		 _Items = pids2List(List,[]),
+		 _Errors = list_to_binary( string:join(_Items, ",") ),
+		 {?ALTO_ERR, ?E_INVALID_FIELD_TYPE, << <<"Endpoint Names are not Valid - [">>/binary, _Errors/binary, <<"]">>/binary >> }
 	end.	
 	
 invalid_eps(undefined) ->

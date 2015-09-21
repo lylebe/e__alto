@@ -189,11 +189,8 @@ validate_semantics(Costmap) ->
 %%%%%%%%%%%%%%%%%%%%
 %% Filtering
 %%%%%%%%%%%%%%%%%%%%
-is_valid_filter(Filter) ->
-	costmap_utils:is_valid_filter(Filter, "pids", fun utils:invalid_pidnames/1).
-
 %%
 %% @doc Retrieves Information based upon the JSON provided request.  
 %% 	
 filter_costmap(Path, InputParameters) ->
-	costmap_utils:filter_Xcostmap(Path, InputParameters, "pids", "cost-map", fun utils:invalid_pidnames/1).
+	costmap_utils:filter_Xcostmap(Path, InputParameters, "pids", "cost-map", fun utils:invalid_pidnames/1, fun utils:invalid_pidnames_asError/1).

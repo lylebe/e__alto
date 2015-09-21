@@ -62,6 +62,7 @@ set_default(MapName) when is_binary(MapName) ->
 	e_alto_backend:set_constant(?DEFMAPKEY,MapName). 
 
 store_map(Path,_,JSON) ->
+	lager:info("JSON Value is ~p",[validate(JSON)]),
 	case validate(JSON) of
 		{ok, Map, V4ApplicationState, V6ApplicationState} ->
 			%%Get the ResourceId and tag
@@ -115,8 +116,16 @@ get_map(MapIdentifier, Vtag) ->
 %%
 %% @doc Retrieves Pids based upon the JSON provided request.  
 %% 
-get_map_by_filter(MapIdentifier, InputParameters) ->
-	filter_map( get_map(MapIdentifier), InputParameters ).
+get_map_by_filter(Path, InputParameters) ->
+	case is_valid_filter(InputParameters) of
+		{true, ParsedBody} ->
+			case registry:get_resourceid_for_path(Path) of
+				not_found -> not_found;
+				{_, _ResourceId} -> filter_map(get_map(_ResourceId),ParsedBody)
+			end;
+		{false, SomeError} -> {error, SomeError};  %%TECH DEBT - < 1$ Would love to collapse this line and the next one some day...
+		SomethingElse -> {error, SomethingElse}
+	end.	
 	
 filter_map(not_found, _) ->
 	not_found;
@@ -124,7 +133,6 @@ filter_map(NetworkMap, InputParameters) ->
 	Z = ej:get({<<"pids">>},InputParameters),
 	Y = ej:get({<<"address-types">>},InputParameters),
 	lager:info("Input Parameters are ~p and ~p",[Z,Y]),
-
 	A = { struct, [{<<"meta">>, {struct, []}},	
 				   {<<"network-map">>, filter_pids( ej:get({<<"pids">>},InputParameters), 
 													 NetworkMap, 
@@ -189,13 +197,12 @@ validate(JSON) ->
 %Validates and Builds Map Data	
 validate_semantics(NetworkMap) ->
 	%%Ensure the tag is set
-	_Errors1 = utils:field_present({"meta","vtag","resource-id"},NetworkMap,<<"#/meta/vtag/resource-id attribute was not present in Map">>,[]),
-	_Errors2 = utils:field_present({"meta","vtag","tag"},NetworkMap,<<"#/meta/vtag/tag attribute was not present in Map">>,_Errors1),	
+	_Errors =  utils:check_fields([ { {"meta","vtag","resource-id"},NetworkMap,<<"#/meta/vtag/resource-id attribute was not present in Map">> },
+				{ {"meta","vtag","tag"},NetworkMap,<<"#/meta/vtag/tag attribute was not present in Map">> } ] ),	
+	lager:info("_Errors are ~p",[_Errors]),
 	case  utils:field_present({<<"network-map">>},NetworkMap,<<"#/network-map attribute was not present in Map">>) of
-		true ->
-			validate_mapbody(NetworkMap,_Errors2);
-		Error ->
-			[Error] ++ _Errors2
+		true -> validate_mapbody(NetworkMap,_Errors);
+		Error -> [Error] ++ _Errors
 	end.
 
 add_ifnotempty(Errors,ErrFun,Verbose,Type,SubType,Acc) ->
@@ -228,7 +235,7 @@ validate_mapbody(NetworkMap, AccErrors) ->
 		    { ok, NetworkMap, 
 				route_utils:build_bitstring_trie( PidRoutesListV4, trie:new() ),
 				route_utils:build_bitstring_trie( PidRoutesListV6, trie:new() ) };
-		true ->
+		true -> 
 			_AccErrors3
     end.
 

@@ -19,6 +19,8 @@ TODO
 - Returning RFC 7285 error messages
 - Endpoint Cost Service (coarse grained search)
 - Reorganize Filters for coarse/fine grained values
+- Catching E_INVALID_FIELD_TYPE in requests
+- Catching E_INVALID_FIELD_VALUE in requests
 
 -----
 Install / Build

@@ -113,7 +113,7 @@ removeResource(FilterPath, Metric) ->
 %% @doc Gets a EP Cost Document
 %%
 filter_epcs(Path, InputParameters) ->
-	costmap_utils:filter_Xcostmap(Path, InputParameters, "endpoints", "endpoint-cost-map", fun utils:invalid_eps/1).
+	costmap_utils:filter_Xcostmap(Path, InputParameters, "endpoints", "endpoint-cost-map", fun utils:invalid_eps/1, fun utils:invalid_eps_asError/1).
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Validation 
@@ -121,7 +121,3 @@ filter_epcs(Path, InputParameters) ->
 %%% Endpoint Cost Map validation support.
 validate_semantics(Costmap) ->
 	costmap_utils:validate_Xcostmap(Costmap,{<<"endpoint-cost-map">>},fun utils:valid_ep/2,nothing).
-
-%% Request Validation
-is_valid_filter(Filter) ->
-	costmap_utils:is_valid_filter(Filter, "endpoints", fun utils:invalid_eps/1).

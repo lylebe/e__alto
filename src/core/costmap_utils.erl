@@ -24,9 +24,9 @@
 
 -export([	
 	validate_Xcostmap/4,
-	is_valid_filter/3,
+	is_valid_filter/4,
 	is_registered/3,
-	filter_Xcostmap/5,
+	filter_Xcostmap/6,
 	generate_path/2,
 	generate_path/3
 	]).
@@ -39,33 +39,32 @@
 is_registered(BasePath, CostMode, CostMetric) ->
 	registry:is_registered(generate_path(BasePath, CostMode, CostMetric)).
 
-%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% @doc Determines if the filter requested is valid.
+%% @doc Determines if the filter is valid.
 %%
-is_valid_filter(Filter, PathPrefix, ValidationFunction) ->
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+is_valid_filter(Filter, PathPrefix, ValidationFunction, ErrFormatFunction) ->
 	case utils:weak_validate_syntax(Filter) of
 		{ok, Body} -> 
+			_Errors = lists:flatten ([ utils:check_fields([
+						{ {PathPrefix,"srcs"},Body,<<"Missing srcs field in request">> },
+						{ {PathPrefix,"dsts"},Body,<<"Missing dsts field in request">> },
+						{ {PathPrefix,"cost-type"},Body,<<"Missing cost-type field in request">> } ]),
+					ErrFormatFunction (  ValidationFunction(ej:get({PathPrefix,"srcs"},Body)) ),
+					ErrFormatFunction (  ValidationFunction(ej:get({PathPrefix,"dsts"},Body)) )
+					]),
 			case (ej:get({"cost-type"},Body) =/= undefined) of
 				true -> 
-					{_ConstraintsOk, _ConstraintsValue} = case valid_constraints(ej:get({"constraints"},Body),ej:get({"cost-type","cost-mode"},Body),[]) of
-						{ true, empty_list } -> {true, []};
-						{ true, Constraints } -> {true, Constraints};
-						{ false, Something } -> {false, Something}
-					end,
-					_SourceErrors = ValidationFunction(ej:get({PathPrefix,"srcs"},Body)),
-					_DestErrors = ValidationFunction(ej:get({PathPrefix,"dsts"},Body)),
-					case ((length(_SourceErrors) == 0) andalso (length(_DestErrors) == 0) andalso (_ConstraintsOk == true)) of
-						false -> 
-							lager:info("~p--Is Valid Filter-Syntax validation failed with Constraint Errors = ~p, Source Errors = ~p and Destination Errors = ~p",[?MODULE, _ConstraintsValue, _SourceErrors, _DestErrors]),
-							{false, _ConstraintsValue, _SourceErrors, _DestErrors};
-						true ->
-							lager:info("~p--Is Valid Filter-Syntax validation passed",[?MODULE]),
-							{true, Body, _ConstraintsValue}
+					case valid_constraints(ej:get({"constraints"},Body),ej:get({"cost-type","cost-mode"},Body),[],[]) of
+						{ true, Constraints } -> case length(_Errors) of
+							0 -> {true, Constraints};
+							_ -> {false, _Errors}
+						end;
+						{ false, ConstraintErrors } -> {false, [ErrFormatFunction(ConstraintErrors)] ++ _Errors}
 					end;
 				false -> 
-					lager:info("~p--Is Invalid Filter- Error - cost-type attribute was not present",[?MODULE]),
-					{false, invalid_request}
+					{ false, _Errors }
 			end;
 		SomethingElse -> 
 			lager:info("Filter did not pass weak validation check",[]),
@@ -75,21 +74,21 @@ is_valid_filter(Filter, PathPrefix, ValidationFunction) ->
 %%
 %% @doc Validates a list of Constraints
 %%
-valid_constraints(undefined,_,_) ->
-	{ true, empty_list};
-valid_constraints(Conditions,Units,AccIn) when is_binary(Units) ->
-	valid_constraints(Conditions,list_to_atom(binary_to_list(Units)),AccIn);
-valid_constraints(Conditions,Units,AccIn) when is_list(Units) ->
-	valid_constraints(Conditions,list_to_atom(Units),AccIn);
-valid_constraints([], _, AccIn) ->
-	{true, AccIn};
-valid_constraints([H|T], Units, AccIn) ->
+valid_constraints(undefined,_,_,_) ->
+	{ true, [] };
+valid_constraints(Conditions,Units,AccIn,Errors) when is_binary(Units) ->
+	valid_constraints(Conditions,list_to_atom(binary_to_list(Units)),AccIn,Errors);
+valid_constraints(Conditions,Units,AccIn,Errors) when is_list(Units) ->
+	valid_constraints(Conditions,list_to_atom(Units),AccIn,Errors);
+valid_constraints([], _, AccIn,Errors) ->
+	case length(Errors) of
+		0 -> { true, AccIn };
+		_ -> { false, Errors }
+	end;
+valid_constraints([H|T], Units, AccIn,Errors) ->
 	case valid_constraint(H,Units) of
-		{false, SomeValue} -> 
-			lager:info("Invalid Constration found with error ~p", [atom_to_list(SomeValue)]),
-			{false, SomeValue};
-		{true, Constraint} ->
-			valid_constraints(T,Units,[Constraint]++AccIn)
+		{false, SomeValue} -> valid_constraints(T,Units,AccIn,[SomeValue]++Errors);
+		{true, Constraint} -> valid_constraints(T,Units,[Constraint]++AccIn,Errors)
 	end.
 
 %%
@@ -103,11 +102,19 @@ valid_constraint(Condition,Units) when is_atom(Units) ->
 		true -> { fine_grain, 1.0 };
 		false ->
 			{_ValType,_NumValue} = to_unit(_Value),
-			case (lists:member(_Operator, ["gt","lt","ge","le","eq"]) andalso (_ValType =/= undefined)) of
-				false -> {false, invalid_format};
+			_ErrorC1 = case lists:member(_Operator, ["gt","lt","ge","le","eq"]) of 
+				false -> [ unknown_operator ] ;
+				true -> []
+			end,
+			_Result = case ((_ValType =/= undefined)) of
+				false -> {false, [unknown_type] ++ _ErrorC1 };
 				true -> 
 					case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
-						true -> {true, {list_to_atom(_Operator), _NumValue}};
+						true -> 
+							case (length(_ErrorC1) > 0) of
+								true -> {true, {list_to_atom(_Operator), _NumValue}};
+								false -> { false, _ErrorC1 }
+							end;
 						false -> {false, value_type_mismatch}
 					end
 			end 
@@ -225,23 +232,21 @@ validate_Xcost_values([{DstId,_}=Attribute|T],SrcId,CostMode,VF,VFArgs,ErrorList
 %%
 %% @doc Retrieves Information based upon the JSON provided request.  
 %% 	
-filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction) ->
-	case is_valid_filter(InputParameters, PathPrefix, ValidationFunction) of 
+filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction, ErrorFormatFunction) ->
+	case is_valid_filter(InputParameters, PathPrefix, ValidationFunction, ErrorFormatFunction) of 
 		{true, Body, Constraints} ->
 			CostMetric = ej:get({"cost-type","cost-metric"},Body),
 			CostMode = ej:get({"cost-type","cost-mode"},Body),
 			case get_filterinfo(Path) of
-				{false, SomeIssue} ->
-					{error, SomeIssue};
 				not_found ->
 					lager:info("Error - No filter information found for Path ~p",[Path]),
-					not_found;
+					{ internal_error, <<"Internal Error - No filter information found for Path">>};
 				_FilterInfo ->
 					case contains_filterspec(_FilterInfo, CostMetric, CostMode) of
 						{false, nothing} ->
-							{not_found, "The Costmap could not be located for the Cost Metric and Mode requested"};
+							{not_found, <<"The Costmap could not be located for the Cost Metric and Mode requested">>};
 						{true, not_found} ->
-							{not_found, "Although the Filter request is valid the Costmap could not be located"};
+							{not_found, <<"Although the Filter request is valid the Costmap could not be located">>};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
 							{_Hits, _Misses} = filter_sources( ej:get({PathPrefix,"srcs"},Body), 
@@ -356,7 +361,7 @@ get_filterinfo(Path) when is_binary(Path) ->
 	Spec;
 get_filterinfo(Path) when is_list(Path) ->
 	{_,Spec}=e_alto_backend:get_constant(list_to_binary(Path ++ ?FILTEREXT)),
-lager:info("Spec is ~p",[Spec]),
+	lager:info("Spec is ~p",[Spec]),
 	Spec.
 
 %%

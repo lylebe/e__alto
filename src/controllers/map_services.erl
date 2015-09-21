@@ -66,6 +66,10 @@ set_error(Errors,Req) ->
 	{ok,Req2} = cowboy_req:reply(400,[{<<"Content-Type">>,<<"application/alto-error+json">>}],_Body,Req),
 	Req2.
 
+set_TextMessage(Code, Message,Req) ->
+	{ok,Req2} = cowboy_req:reply(Code,[{<<"Content-Type">>,<<"application/text">>}],Message,Req),
+	Req2.
+
 % A map filter request
 handle_map_filter(Req, State) ->
 	io:format("~p--Map Filter POST Received~n", [?MODULE]),
@@ -74,18 +78,10 @@ handle_map_filter(Req, State) ->
 	{ok, Body, _} = cowboy_req:body(Req),
 	lager:info("Body received is ~p~n",[Body]),
 	%Validation & Processing
-	case mapservices:is_valid_filter(Body) of
-		{false,Errors} ->
-			{halt, set_error(Errors,Req), State};
-		{true, ParsedBody} ->
-			case registry:get_resourceid_for_path(_Path) of
-				not_found ->
-					lager:info("~p--Path Mapping not found for ~p~n",[?MODULE,_Path]),
-					{false, cowboy_req:reply(404,Req), State};
-				{_, _ResourceId} ->
-					io:format("~p--Resource Id = ~p~n",[?MODULE,_ResourceId]),
-					_FilteredMap = mapservices:get_map_by_filter(_ResourceId,ParsedBody),
-					io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
-					{true, cowboy_req:set_resp_body(mochijson2:encode(_FilteredMap), Req), State}
-			end
+	case mapservices:get_map_by_filter(_Path,Body) of
+		{internal_error, IntErrorMessage} -> {halt, set_TextMessage(500,IntErrorMessage,Req), State};
+		{error,Errors} -> 					 {halt, set_error(Errors,Req), State};
+		not_found -> 						 {halt, cowboy_req:reply(404,Req), State};
+		{not_found, NFMessage} ->			 {halt, set_TextMessage(404,NFMessage,Req), State};	
+		GoodResult ->						 {true, cowboy_req:set_resp_body(mochijson2:encode(GoodResult), Req), State}	
 	end.
