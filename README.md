@@ -1,6 +1,6 @@
 e_alto
 ======
-This is a series of libraries and eventually an application that will 
+This is a series of libraries and application that will 
 support the IETF Application Layer Transport Optimization (ALTO) core
 specification (RFC 7285) and, as opportunities permit, related 
 standards.
@@ -30,6 +30,7 @@ directory.  (Don't forget to get dependencies first!)
 Usage
 ----- 
 1. Run the start script.
+
 	e_alto$ ./start.sh
 
 You will see several initializaton activites in the erlang console.
@@ -39,12 +40,9 @@ later).
   
 	e_alto:start().
 
-The server starts and listens on 8080.
-
-Two URIs (by default) are available 
-http://localhost:8080/ (Information Resource Directory)
-http://localhost:8080/networkmap (Map Service - loads the default 
-network map found in the app.config variable defaultmaploc
+The IRD URI (by default) is http://localhost:8080/ 
+and specified in app.config
 
 KNOWN ISSUES/LIMITATIONS
+------------------------
 1. Manual start from console. 
