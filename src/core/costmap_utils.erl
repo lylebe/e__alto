@@ -48,23 +48,26 @@ is_valid_filter(Filter, PathPrefix, ValidationFunction, ErrFormatFunction) ->
 	case utils:weak_validate_syntax(Filter) of
 		{ok, Body} -> 
 			_Errors = lists:flatten ([ utils:check_fields([
-						{ {PathPrefix,"srcs"},Body,<<"Missing srcs field in request">> },
-						{ {PathPrefix,"dsts"},Body,<<"Missing dsts field in request">> },
-						{ {PathPrefix,"cost-type"},Body,<<"Missing cost-type field in request">> } ]),
-					ErrFormatFunction (  ValidationFunction(ej:get({PathPrefix,"srcs"},Body)) ),
-					ErrFormatFunction (  ValidationFunction(ej:get({PathPrefix,"dsts"},Body)) )
+						{ {"cost-type"},Body,<<"Missing cost-type field in request">> } ]),
+					ErrFormatFunction (ValidationFunction(ej:get({PathPrefix,"srcs"},Body)) ),
+					ErrFormatFunction (ValidationFunction(ej:get({PathPrefix,"dsts"},Body)) )
 					]),
+			_ErrorList = lists:foldl(fun(E,AccIn) -> case (E == nothing) of 
+														false -> [E] ++ AccIn;
+														true -> AccIn
+													 end
+													end, [], _Errors),	
 			case (ej:get({"cost-type"},Body) =/= undefined) of
 				true -> 
 					case valid_constraints(ej:get({"constraints"},Body),ej:get({"cost-type","cost-mode"},Body),[],[]) of
-						{ true, Constraints } -> case length(_Errors) of
-							0 -> {true, Constraints};
-							_ -> {false, _Errors}
+						{ true, Constraints } -> case length(_ErrorList) of
+							0 -> {true, Body, Constraints};
+							_ -> {false, _ErrorList}
 						end;
-						{ false, ConstraintErrors } -> {false, [ErrFormatFunction(ConstraintErrors)] ++ _Errors}
+						{ false, ConstraintErrors } -> {false, [ErrFormatFunction(ConstraintErrors)] ++ _ErrorList}
 					end;
 				false -> 
-					{ false, _Errors }
+					{ false, _ErrorList }
 			end;
 		SomethingElse -> 
 			lager:info("Filter did not pass weak validation check",[]),
@@ -87,7 +90,7 @@ valid_constraints([], _, AccIn,Errors) ->
 	end;
 valid_constraints([H|T], Units, AccIn,Errors) ->
 	case valid_constraint(H,Units) of
-		{false, SomeValue} -> valid_constraints(T,Units,AccIn,[SomeValue]++Errors);
+		{false, SomeValue} -> valid_constraints(T,Units,AccIn,[SomeValue]++Errors);	
 		{true, Constraint} -> valid_constraints(T,Units,[Constraint]++AccIn,Errors)
 	end.
 
@@ -112,8 +115,8 @@ valid_constraint(Condition,Units) when is_atom(Units) ->
 					case ((Units == numerical) and (_ValType == floattype)) or ((Units == ordinal) and (_ValType == inttype)) of
 						true -> 
 							case (length(_ErrorC1) > 0) of
-								true -> {true, {list_to_atom(_Operator), _NumValue}};
-								false -> { false, _ErrorC1 }
+								false -> {true, {list_to_atom(_Operator), _NumValue}};
+								true -> { false, _ErrorC1 }
 							end;
 						false -> {false, value_type_mismatch}
 					end
@@ -264,8 +267,8 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 										   {<<"cost-map">>, _FinalResult}]}
 					end
 			end;
-		{false, ConstraintErrors, SrcErrors, DstErrors} ->
-			{error, ConstraintErrors, SrcErrors, DstErrors} 
+		{false, SomeErrors } ->
+			{error, SomeErrors}
 	end. 
 	
 search_coarsegrained("cost-map", _) ->

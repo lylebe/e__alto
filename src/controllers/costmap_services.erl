@@ -29,11 +29,7 @@
 		 handle_costmap_filter/2,
 		 terminate/3]).
 
-init(_, _, _) ->
-	{upgrade, protocol, cowboy_rest}.
-	
-terminate(_Reason, _Req, _State) ->
-  ok.
+-include("common_services.hrl").
 
 allowed_methods(Req, State) ->
   	{[<<"GET">>, <<"POST">>], Req, State}.
@@ -65,24 +61,4 @@ handle_costmap_get(Req, State) ->
 
 % A map filter request
 handle_costmap_filter(Req, State) ->
-	io:format("~p--Map Filter POST Received~n", [?MODULE]),
-	{_Path,_}=cowboy_req:path(Req),
-	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
-	{ok, Body, _} = cowboy_req:body(Req),
-	lager:info("Body received it ~p~n",[Body]),
-	%Validation
-	{RespBody, Req2} = case costmapservices:filter_costmap(_Path,Body) of
-		{internal_error, IntErrorMessage} ->
-			{"", cowboy_req:reply(500,Req)};
-		{error, ErrMessage} ->
-			{"", cowboy_req:reply(400,Req)};
-		not_found ->
-			{"", cowboy_req:reply(404,Req)};			
-		{not_found, NFMessage} ->  %% TODO - Add the NFMessage to the body
-			{"", cowboy_req:reply(404,Req)};			
-		_FilteredMap ->
-			io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
-			{mochijson2:encode(_FilteredMap), Req}
-	end,
-	Req3 = cowboy_req:set_resp_body(RespBody,Req2),
-  	{true, Req3, State}.
+	handle_filter(fun costmapservices:filter_costmap/2,Req,State).

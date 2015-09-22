@@ -12,13 +12,14 @@
 % See the License for the specific language governing permissions and
 % limitations under the License.
 %
-%% @author LyleA="{ \"properties\": [ \"def.pid\" ], \"endpoints\" : [ \"ipv4:0.0.0.1\", \"ipv4:100.0.1.1\" ] }". Bertz <lyleb551144@gmail.com>
+%% @author Lyle Bertz <lyleb551144@gmail.com>
 %% @copyright Copyright 2015 Lyle Bertz
 %%
 %% @doc ALTO (RFC 7285) Endpoint Services functions
 %% Endpoints are grouped together by a path.
 %%
 %% @end
+
 -module(endpointservices).
 
 -export([
@@ -46,7 +47,7 @@ load_defaults() ->
 set_default_epservice(Path) ->
 	e_alto_backend:set_constant(?EPDEFPATHID, Path).
 	
-get_default_epservice(Path) ->
+get_default_epservice() ->
 	e_alto_backend:get_constant(?EPDEFPATHID).
 	
 ep_query(Path,Body)	->
@@ -60,22 +61,25 @@ ep_query(Path,Body)	->
 validate_epquery(JSON) ->
 		case utils:weak_validate_syntax(JSON) of
 		{ok, Body} -> 
-			lager:info("Map passed weak validation test",[]),
-			case (ej:get({"properties"},Body) =/= undefined) andalso (ej:get({"endpoints"},Body) =/= undefined) of
-				false ->
-					lager:info("Missing attributes in request",[]),
-					{error};
-				true ->
-					lager:info("Will return ~p for syntax validation",[Body]),
-					{ok, Body}
+			_Errors = lists:flatten ([ utils:check_fields([
+						{ {"properties"},Body,<<"Missing properties field in request">> },
+						{ {"endpoints"},Body,<<"Missing endpoints field in request">> } ]),
+					utils:invalid_pidnames_asError (utils:invalid_pidnames(ej:get({"endpoints"},Body)) )
+					]),
+			_ErrorList = lists:foldl(fun(E,AccIn) -> case (E == nothing) of 
+														false -> [E] ++ AccIn;
+														true -> AccIn
+													 end
+													end, [], _Errors),
+			case length(_ErrorList) of
+				0 -> {ok, Body};
+				_ -> _ErrorList
 			end;
 		{?ALTO_ERR, ErrCode, ErrMessage} ->
 			lager:info("Did not pass weak validation check",[]),
 			{?ALTO_ERR, ErrCode, ErrMessage}
 	end.	
 	
-%%TODO - Go back to the map in the meta info IF the EP is part of a ep
-%% resource that uses more than one item in the dependent vtag.
 get_eps(Path,EPlist,PropsList) ->
 	lager:info("Retreiving path ~p",[Path]),
 	_Space = registry:get_resource_by_path(Path),
@@ -129,7 +133,8 @@ store_endpoints(Path,ResourceKey,Data) ->
 			{?ALTO_ERR, ErrCode, ErrMessage};
 		{ false, Errors, _ } -> 
 			lager:info("Errors found - ~p",[Errors]),
-			{error, "Invalid Request"};
+			%% TODO - Getting the errors out to console in a better fashion here...
+			{?ALTO_ERR, unknown, Errors};
 		{ true, _, JSON } ->
 			%%Grab the space
 			_Space = registry:get_resource_by_path(Path),
@@ -160,12 +165,36 @@ store_endpoints(Path,ResourceKey,Data) ->
 			{ok, ResourceKey, JSON}
 	end.
 	
+validate_maps(List) ->
+	_Res = lists:foldl(fun(E,Acc) ->
+		case registry:get_resource(ej:get({"resource-id"},E), ej:get({"tag"},E)) of
+			not_found -> ["resource:" ++ binary_to_list(ej:get({"resource-id"},E)) ++ "/tag:" ++ binary_to_list(ej:get({"tag"},E))] ++ Acc;
+			_ -> Acc
+		end
+	   end,
+	   [],
+	   List),
+	case length(_Res) of
+		0 -> [];
+		_ ->
+			 [{?ALTO_ERR, ?E_INVALID_FIELD_VALUE, list_to_binary("Missing the following Maps: " ++ string:join(_Res,", ")) }]
+	end.
+	
 validate_semantics(JSON) ->
-	%%TODO - Validate the map and version exist lest we be in trouble.
-	%%ITERATE THROUGH LIST
+	_ErrorList1 = lists:flatten( utils:check_fields([
+						{ {"meta","dependent-vtags",first,"resource-id"},JSON,<<"Missing resource-id in request">> },
+						{ {"meta","dependent-vtags",first,"tag"},JSON,<<"Missing resource-id in request">> }, 
+						{ {"endpoint-properties"},JSON,<<"Missing endpoint-properties in request">> } ])),
+	_ErrorList2 = lists:foldl(fun(E,AccIn) -> case (E == nothing) of 
+												false -> [E] ++ AccIn;
+												true -> AccIn
+											 end
+											end, [], _ErrorList1),
+	%%Validate the map and version exist.
+	_ErrorList3 = validate_maps(ej:get({"meta","dependent-vtags"},JSON)) ++ _ErrorList2,
 	%%Validate Each Address Type is supported and build it to a list
 	{struct, _Attributes} = ej:get({"endpoint-properties"}, JSON),
-	_Errors = lists:foldl(fun({Name,_},AccIn) -> 
+	_PidErrors = lists:foldl(fun({Name,_},AccIn) -> 
 					case utils:valid_eptype(Name) of
 						true -> AccIn;
 						false -> [Name] ++ AccIn
@@ -173,6 +202,7 @@ validate_semantics(JSON) ->
 				end,
 				[],
 				_Attributes),
+	_Errors = _PidErrors ++ _ErrorList3,
 	{ (length(_Errors) == 0), _Errors, JSON }.	
 	
 store_eps(SomeValue,ResourceId,SomeList) when is_atom(SomeValue) ->
@@ -197,7 +227,7 @@ store_ep(Space,ResourceId,EPAddress) when is_binary(EPAddress) ->
 store_ep(Space,ResourceId,EPAddress) ->
 	trie:store(EPAddress,ResourceId,Space).
 	
-remove_eps(SomeValue,SomeList) when is_atom(SomeValue) ->
+remove_eps(SomeValue,_) when is_atom(SomeValue) ->
 	trie:new();
 remove_eps(Space,[]) ->
 	Space;

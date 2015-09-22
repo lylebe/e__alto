@@ -28,12 +28,12 @@
 		 validate_semantics/1,
 		 get_costmap/1, 
 		 get_costmap/2, 
+		 get_costmap/3,
 		 get_costmap_by_path/3,
 		 get_costmap_by_path/4,
 
 		 filter_costmap/2,
-		 store_costmap/2,
-		 load_costmap/1,
+		 store_costmap/3,
 		 load_defaults/0
 		]).
 
@@ -43,22 +43,7 @@
 -include("e_alto.hrl").
 
 load_defaults() ->
-	lager:info("~p--Loading Default Cost Maps--Starting Load",[?MODULE]),
-	lists:foldl(fun(E,AccIn) -> [load_costmap(E)] ++ AccIn end, [], utils:get_param(?DEFCMAPS)).
-	
-load_costmap({Path,FileLoc}) ->
-	lager:info("~p--Loading CostMap -- ~p -- Beginning File Read at location ~p",[?MODULE,Path,FileLoc]),	
-	case file:read_file(FileLoc) of
-		{ok, _File} ->
-			lager:info("~p--Load CostMap -- Read complete - Starting Storage",[?MODULE]),	
-			{ok, _ResourceId, X} = costmapservices:store_costmap( string:sub_string(Path,2),_File),
-			lager:info("~p--Load Default Map -- Completed",[?MODULE]),
-			lager:info("Resulting Costmap -> ~n~n~p~n~n~n~n~n~n",[X]),
-			{Path, X};
-		{error, Value} ->
-			lager:info("An error occurred reading the file - ~p",[Value]),
-			{Path, error}
-	end.	
+	utils:load_defaults("Network Cost Maps", ?DEFCMAPS, fun costmapservices:store_costmap/3).	
 
 %%
 %% @doc Stores the Cost Map information.  
@@ -70,7 +55,7 @@ load_costmap({Path,FileLoc}) ->
 %% CostMap - the actual CostMap data
 %% @end
 %% 
-store_costmap(Path,JSON) ->
+store_costmap(Path,_,JSON) ->
 	case validate(JSON) of
 		{ok, Costmap, ApplicationState} ->
 			%%Get the ResourceId and tag
@@ -88,7 +73,7 @@ store_costmap(Path,JSON) ->
 			_IRD0 = metrics:updateIRD(_Metric, registry:getIRD()),		
 			_ResourceEntry = resources:resource_to_record(costmap,
 							_ResourceId,
-							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ "/" ++ Path),
+							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
 							[ <<"application/alto-costmap+json">> ],
 							[],
 							[ {<<"cost-type-names">>, [_Metric]} ],

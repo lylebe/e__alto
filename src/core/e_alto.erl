@@ -65,7 +65,8 @@ init() ->
 
 add_route_info(_, {_,error}, List) ->
 	List;
-add_route_info(ApplicationType, {Path,_}, List) ->
+add_route_info(ApplicationType, {Path,X}, List) ->
+	lager:info("Adding ~p, ~p and ~p",[Path,X,List]),
 	[ {ApplicationType, Path} ] ++ List.
 
 load_app(App) ->

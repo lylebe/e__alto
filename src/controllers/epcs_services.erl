@@ -26,10 +26,10 @@
 		 content_types_provided/2,
 		 content_types_accepted/2,
 		 err_resp/2,
-		 handle_epcostmap_filter/2]).
+		 handle_epcostmap_filter/2,
+		 terminate/3]).
 
-init(_, _, _) ->
-	{upgrade, protocol, cowboy_rest}.
+-include("common_services.hrl").
 
 allowed_methods(Req, State) ->
   	{[<<"POST">>], Req, State}.
@@ -50,22 +50,4 @@ err_resp(Req, State) ->
 
 % A map filter request
 handle_epcostmap_filter(Req, State) ->
-	io:format("~p--CostMap Filter POST Received~n", [?MODULE]),
-	{_Path,_}=cowboy_req:path(Req),
-	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
-	{ok, Body, _} = cowboy_req:body(Req),
-	lager:info("Body received it ~p~n",[Body]),
-	%Validation
-	{RespBody, Req2} = case epcostservices:filter_epcs(_Path,Body) of
-		{error, ErrMessage} ->
-			{ErrMessage, cowboy_req:reply(422,Req)};
-		not_found ->
-			{"", cowboy_req:reply(404,Req)};			
-		{not_found, NFMessage} ->
-			{NFMessage, cowboy_req:reply(422,Req)};			
-		_FilteredMap ->
-			io:format("Filter Map = ~p~n~n~n~n~n",[_FilteredMap]),
-			{mochijson2:encode(_FilteredMap), Req}
-	end,
-	Req3 = cowboy_req:set_resp_body(RespBody,Req2),
-  	{true, Req3, State}.
+	handle_filter(fun epcostservices:filter_epcs/2,Req,State).

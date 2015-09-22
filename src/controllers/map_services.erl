@@ -27,11 +27,7 @@
 		 handle_map_filter/2,
 		 terminate/3]).
 
-init(_, _, _) ->
-	{upgrade, protocol, cowboy_rest}.
-
-terminate(_Reason, _Req, _State) ->
-  ok.
+-include("common_services.hrl").
 
 allowed_methods(Req, State) ->
   	{[<<"GET">>, <<"POST">>], Req, State}.
@@ -61,27 +57,6 @@ handle_map_get(Req, State) ->
 	end,
 	{Body, Req2, State}.
 
-set_error(Errors,Req) ->
-	_Body = mochijson2:encode( utils:errors_toEJSON(Errors) ),
-	{ok,Req2} = cowboy_req:reply(400,[{<<"Content-Type">>,<<"application/alto-error+json">>}],_Body,Req),
-	Req2.
-
-set_TextMessage(Code, Message,Req) ->
-	{ok,Req2} = cowboy_req:reply(Code,[{<<"Content-Type">>,<<"application/text">>}],Message,Req),
-	Req2.
-
 % A map filter request
 handle_map_filter(Req, State) ->
-	io:format("~p--Map Filter POST Received~n", [?MODULE]),
-	{_Path,_}=cowboy_req:path(Req),
-	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
-	{ok, Body, _} = cowboy_req:body(Req),
-	lager:info("Body received is ~p~n",[Body]),
-	%Validation & Processing
-	case mapservices:get_map_by_filter(_Path,Body) of
-		{internal_error, IntErrorMessage} -> {halt, set_TextMessage(500,IntErrorMessage,Req), State};
-		{error,Errors} -> 					 {halt, set_error(Errors,Req), State};
-		not_found -> 						 {halt, cowboy_req:reply(404,Req), State};
-		{not_found, NFMessage} ->			 {halt, set_TextMessage(404,NFMessage,Req), State};	
-		GoodResult ->						 {true, cowboy_req:set_resp_body(mochijson2:encode(GoodResult), Req), State}	
-	end.
+	handle_filter(fun mapservices:get_map_by_filter/2,Req,State).

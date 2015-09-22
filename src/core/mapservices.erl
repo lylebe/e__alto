@@ -48,9 +48,9 @@ load_defaults() ->
 load_default_map() ->
 	{ _DefMapPath, _DefMapLoc } = utils:get_param(?DEFMAP),	
 	case utils:load_file( fun mapservices:store_map/3, _DefMapPath, _DefMapLoc ) of
-		{Path, _ResourceId, X} ->
+		{Path, _ResourceId, Map} ->
 			set_default(_ResourceId),
-			{Path, X};
+			{Path, Map};
 		{Path, error} ->
 			{Path, error}
 	end.	
@@ -68,7 +68,7 @@ store_map(Path,_,JSON) ->
 			%%Get the ResourceId and tag
 			_ResourceId = ej:get({"meta","vtag","resource-id"},Map),
 			_Tag = ej:get({"meta","vtag","tag"},Map),
-			X = registry:updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
+			registry:updateResource(_ResourceId, _Tag, map, Map, { V4ApplicationState, V6ApplicationState }),
 
 			%Step 2 - update IRD
 			_ResourceEntry = resources:resource_to_record(networkmap,
@@ -87,7 +87,7 @@ store_map(Path,_,JSON) ->
 			lager:info("HTTP URI is ~p for Resource ~p",[_Path,_ResourceId]),
 			registry:add_uri_mapping(_Path,_ResourceId),
 
-			{ok, _ResourceId, X};
+			{ok, _ResourceId, Map};
 		Error ->
 			Error
 	end.

@@ -113,15 +113,10 @@ invalid_pidnames_asError(List) when is_list(List) ->
 	case length(List) of 
 		0 -> nothing;
 		_ -> 
-		 _Items = pids2List(List,[]),
+		 _Items = lists:foldl(fun(E,Acc) -> [binary_to_list(E)] ++ Acc end, [], List),
 		 _Errors = list_to_binary( string:join(_Items, ",") ),
 		 {?ALTO_ERR, ?E_INVALID_FIELD_TYPE, << <<"Pid Names are not Valid - [">>/binary, _Errors/binary, <<"]">>/binary >> }
 	end.
-		
-pids2List([Pid|L],Acc) when is_binary(Pid) ->
-	pids2List(L,[binary_to_list(Pid)] ++ Acc);
-pids2List([Pid|L],Acc) ->
-	pids2List(L, [Pid] ++ Acc).
 
 invalid_pidnames(undefined) ->
 	[];
@@ -188,10 +183,14 @@ load_file(LoadFunction,Path,FileLoc) ->
 	case file:read_file(FileLoc) of
 		{ok, _File} ->
 			lager:info("~p--Load File-- Read complete - Starting Storage",[?MODULE]),	
-			{ok, _ResourceId, X} = LoadFunction(Path,FileLoc,_File),
-			lager:info("~p--Load File-- Completed",[?MODULE]),
-			lager:info("Loaded Content -> ~n~n~p~n~n~n~n~n~n",[X]),
-			{Path, _ResourceId, X};
+			case LoadFunction(Path,FileLoc,_File) of
+				{ok, _ResourceId, X} ->
+					lager:info("~p--Load File-- Completed",[?MODULE]),
+					lager:info("Loaded Content -> ~n~n~p~n~n~n~n~n~n",[X]),
+					{Path, _ResourceId, X};
+				{?ALTO_ERR, _, _} ->
+					{Path, error}
+			end;				
 		{error, Value} ->
 			lager:info("An error occurred reading the file - ~p",[Value]),
 			{Path, error}
@@ -201,7 +200,7 @@ invalid_eps_asError(List) when is_list(List) ->
 	case length(List) of 
 		0 -> nothing;
 		_ -> 
-		 _Items = pids2List(List,[]),
+		 _Items = lists:foldl(fun(E,Acc) -> [binary_to_list(E)] ++ Acc end, [], List),
 		 _Errors = list_to_binary( string:join(_Items, ",") ),
 		 {?ALTO_ERR, ?E_INVALID_FIELD_TYPE, << <<"Endpoint Names are not Valid - [">>/binary, _Errors/binary, <<"]">>/binary >> }
 	end.	
