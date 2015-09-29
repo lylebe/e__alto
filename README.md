@@ -1,9 +1,8 @@
 e_alto
 ======
-This is a series of libraries and application that will 
-support the IETF Application Layer Transport Optimization (ALTO) core
-specification (RFC 7285) and, as opportunities permit, related 
-standards.
+This is a series of libraries and application that supports the 
+IETF Application Layer Transport Optimization (ALTO) core specification 
+(RFC 7285) and, as opportunities permit, related standards.
 
 AT THIS TIME THE CODE IS ALPHA and undergoing various tests while 
 final code functions are delivered.
@@ -32,8 +31,6 @@ Usage
 1. Run the start script.
 
 	e_alto$ ./start.sh
-
-You will see several initializaton activites in the erlang console.
 
 2. At the erlang console start the server (the script will be fixed 
 later).

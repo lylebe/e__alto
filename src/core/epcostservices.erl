@@ -91,6 +91,7 @@ store_epcs(Path, ResourceKey, JSON) ->
 			e_alto_backend:set_constant(_FilterKey, _NewValue),			
 	
 			%Step 5 - Add this costmap to the metric specific search space
+			metrics:addToIndex(_Metric, epcostmap, fine, _ResourceId, nothing, nothing),
 			
 			{ok, ResourceKey, EPCostmap};
 		{?ALTO_ERR, ErrCode, ErrMessage} ->

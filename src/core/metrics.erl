@@ -30,8 +30,14 @@
 		  removeFromSet/2,
 		  addToSet/3,
 		  gen_metrics/1,
-		  get_metricnames/1
+		  get_metricnames/1,
+		  indexOf/1,
+		  addToIndex/6,
+		  removeFromIndex/2
 		   ]).
+
+-type basetype() :: 'costmap' | 'epcostmap' | 'unknown'.
+-type subtype() :: 'fine' | 'coarse' | 'unknown'.
 
 -include("e_alto.hrl").
 
@@ -58,7 +64,7 @@ bin_to_num(Bin) when is_list(Bin) ->
     end.
 
 %%
-%% Selects which test to perform to validate that the valus is of the 
+%% Selects which test to perform to validate that the value is of the 
 %% specified metric type
 %%
 is_valid_instance(numerical, Val) -> 
@@ -153,3 +159,40 @@ removeFromSet(Metric, Set) ->
 		false -> Set;
 		{_, _, NewSet} -> NewSet
 	end.
+
+-spec indexOf(Metric :: #costmetric{}) -> any().
+
+indexOf(Metric) when is_record(Metric,costmetric) ->
+	_Key = { index, metric_to_EJSON(Metric) },
+	e_alto_backend:get_constant(_Key).
+
+-spec addToIndex(Metric :: #costmetric{},
+				 Type :: basetype(),
+				 SubType :: subtype(),
+				 ResourceId :: any(),
+				 Tag :: any(),
+				 SomeData :: any()) -> atom().
+				 
+addToIndex(Metric, Type, SubType, ResourceId, Tag, SomeData) ->
+	_Key = { index, metric_to_EJSON(Metric) },
+	_NewValue = case e_alto_backend:get_constant(_Key) of
+		not_found -> [{ Type, SubType, ResourceId, Tag, SomeData}];  
+		{_, Value} -> [{ Type, SubType, ResourceId, Tag, SomeData}] ++ Value
+	end, 	
+	e_alto_backend:set_constant(_Key,_NewValue).
+	
+-spec removeFromIndex(Metric :: #costmetric{},
+					  ResourceId :: any()) -> list().
+					  
+removeFromIndex(Metric, ResourceId) -> 
+	_Key = { index, metric_to_EJSON(Metric) },
+	case e_alto_backend:get_constant(_Key) of
+		not_found -> not_found;
+		{_, Value} -> 	
+			_NewValue = case lists:keytake(ResourceId, 3, Value) of
+				false -> Value;
+				{_, _, NewSet} -> NewSet
+			end,
+			e_alto:set_constant(_Key,_NewValue)
+	end.
+	

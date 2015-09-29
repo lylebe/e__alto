@@ -93,6 +93,10 @@ store_costmap(Path,_,JSON) ->
 				_ -> "/" ++ Path
 			end,
 			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {metrics:metric_to_EJSON(_Metric), _ResourceId} ]),
+			
+			%Step 6 - Add the costmap to the metric
+			metrics:addToIndex(_Metric, costmap, coarse, _ResourceId, _MapTag, nothing),
+			
 			{ok, _ResourceId, Costmap};
 		{?ALTO_ERR, ErrCode, ErrMessage} ->
 			{?ALTO_ERR, ErrCode, ErrMessage}
