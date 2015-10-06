@@ -252,18 +252,20 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 							{not_found, <<"Although the Filter request is valid the Costmap could not be located">>};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
-							{_Hits, _Misses} = filter( ej:get({PathPrefix,"srcs"},Body), 
-																ej:get({PathPrefix,"dsts"},Body), 
+							{_Hits, _Misses} = applyFilters( [ {ej:get({PathPrefix,"srcs"},Body), 
+																ej:get({PathPrefix,"dsts"},Body) } ], 
 																Constraints,
 																_CostMap,
 																{[],[]},
 																MapPrefix),
+							%%TODO - Rework when rest of code is ready
 							_FinalResult = case search_coarsegrained(MapPrefix, Constraints) of
 								false -> _Hits;
 								true -> 
-										_X = searchMaps(CostMetric, CostMode, _CostMapId,_Hits,_Misses,Constraints),
+										_X = searchMaps(CostMetric, CostMode, _CostMapId,_Hits,_Misses,Constraints,MapPrefix),
 										_Hits %% TODO - Add coarse grained searches
 							end,
+							%%TODO - Fix bug below that will return <<"cost-map">> even for endpoints...
 							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
 															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
 										   {<<"cost-map">>, _FinalResult}]}
@@ -273,37 +275,76 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 			{error, SomeErrors}
 	end. 
 
-searchMaps(CostMetric,CostMode,SearchedMap,CurrentHits,CurrentMisses,Constraints) ->	
-	_CandidateMaps = findCandidateMaps(CostMetric,CostMode,SearchedMap).
+%%TODO - Get rid of this code when Full Searching is complete	
+search_coarsegrained("cost-map", _) ->
+	false;
+search_coarsegrained("endpoint-cost-map", Constraints) ->
+	case lists:keyfind(fine_grain, 1, Constraints) of
+		false -> true;
+		_ -> false
+	end.
+	
+getSearchType("cost-map", _) ->
+	coarse;
+getSearchType("endpoint-cost-map", Constraints) ->
+	case lists:keyfind(fine_grain, 1, Constraints) of
+		false -> unknown;
+		_ -> fine_grain
+	end.
 
-%% Tech Debt 2$ - When _Resource is found execute search here rather than storing the map.
-%% If we finish the search early we don't have to keep iterating
-findCandidateMaps(CostMetric,CostMode,SearchedMap) ->
-	{_, _Indices } = metrics:indexOf(CostMetric,CostMode),
-	lager:info("Index search returned ~p",[_Indices]),
-	{_,_Results} = lists:foldl(fun({_MapType,_Granularity,_ResourceId,_Version,_},{_SearchedMap,AccList}=AccIn) ->
-					lager:info("Looking for ~p",[binary_to_list(_ResourceId)]),
-					case (_SearchedMap == _ResourceId)  of
-						true -> AccIn;
-						false ->
-								lager:info("Looking to add ~p / ~p",[_ResourceId,_Version]),
-								case registry:get_resource(_ResourceId,_Version) of
-									not_found -> { _SearchedMap, AccList };
-									_ -> { _SearchedMap, [{_MapType,_ResourceId}]++AccList }
-								 end
-					end
-				end,
-				{ SearchedMap, [] },
-				_Indices),
-	lager:info("Candidate Map Results are ~p",[_Results]),
-	_Results.
+full_report(List) when is_list(List) ->
+	lager:info("Reporting~n~n",[]),
+	lists:all(fun(E) -> lager:info("~p~n",[E]), true end, List),
+	lager:info("~n",[]).
 
-filter([],_,_,_,{_Results,_Misses}=ReturnValue,_) ->
-	full_report(["Returning",_Results,_Misses]),
+searchMaps(CostMetric,CostMode,SearchedMap,CurrentHits,CurrentMisses,Constraints,MapPrefix) ->
+	_SeachType = getSearchType(MapPrefix,Constraints),
+	{_, _Indices } = metrics:indexOf(CostMetric,CostMode).
+	%%TODO - Iterate over entries while misses is not empty and we can search more maps
+	
+searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,Hits,Misses,Constraints) ->
+	%%Valid Search Conditions
+	%%1. Both are fine grained and epcs
+	%%2. or non-finegrain
+	case (((MapType == epcostmap) andalso (SearchMapType == epcostmap) andalso (SearchType == fine_grain)) or (SearchType =/= fine_grain)) of
+		false -> { Hits, Misses };
+		true -> case registry:get_resource(ResourceId,Version) of
+					not_found -> { Hits, Misses };
+					_Map -> 
+						_MapPrefix = case MapType of 
+							costmap -> "cost-map";
+							epcostmap -> "endpoint-cost-map"
+						end,
+						case { MapType, SearchMapType } of
+						    {costmap, costmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map");
+						    {epcostmap, epcostmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "endpoint-cost-map");		
+							{epcostmap, costmap} -> %Not a valid search option
+								{Hits,Misses};
+							{costmap, epcostmap} -> %TODO - Translate Misses to the PIDs in the Target Map (if possible) then search
+								{Hits,Misses}
+						end
+				end
+	end.
+
+insertMiss(row,Src,_,Misses) ->
+	[ { [Src], undefined } ] ++ Misses;
+insertMiss(column,_,Dst,Misses) ->
+	[ { undefined, [Dst] } ] ++ Misses;
+insertMiss(_,Src,Dst,Misses) ->
+	[ { [Src], [Dst] } ] ++ Misses.
+
+applyFilters([],_,_,{Hits,Misses},_) ->
+	full_report(["Returning",Hits,Misses]),
+	{Hits,Misses};
+applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix) ->
+	{ _Hits, _Misses } = filter(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix),
+	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix).
+
+filter([],_,_,_,ReturnValue,_) ->
 	ReturnValue;
 filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix) ->
 	{_Hits,_Misses} = case applyConstraints(Prefix,H,Constraints,Map,[],[]) of
-		{[], _ } -> {Hits, [{row,H}] ++ Misses};
+		{[], _ } -> {Hits, insertMiss(row,H,undefined,Misses) };
 		{_Hits2, _Misses2} -> {Hits ++ _Hits2, Misses ++ _Misses2}
 	end,
 	filter(T,undefined,Constraints,Map,{_Hits,_Misses},Prefix);
@@ -319,7 +360,7 @@ applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
 		{struct, Value} -> lists:foldl(fun({Dst,Val}=E,{_Constraints, _Hits,_Misses}) -> 
 								case meets_criteria(_Constraints,Val) of
 								 true -> {_Constraints, [E] ++ _Hits, _Misses};
-								 false -> {_Constraints, _Hits, [{RowName,Dst}] ++ _Misses}
+								 false -> {_Constraints, _Hits, insertMiss(position,RowName,Dst,Misses)}
 								end
 							 end,
 							 {Constraints, Hits, Misses},
@@ -331,7 +372,7 @@ filterRow(_,_,[],_,_,Hits,Misses) ->
 	{Hits,Misses};
 filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses) ->
 	{_Hits,_Misses} = case getValue(Prefix,RowName,H,Map,false,Constraints) of
-		undefined -> { Hits, [{srcdest, RowName, H}] ++ Misses };
+		undefined -> { Hits, insertMiss(position,RowName,H,Misses) };
 		Val ->  { [{H,Val}] ++ Hits, Misses }
 	end,
 	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses).
@@ -366,19 +407,6 @@ getValue(MapPrefix,Src,Dst,Map,CanSwitch,Criteria) ->
 		true -> _Val;
 		false -> undefined
 	end.
-	
-search_coarsegrained("cost-map", _) ->
-	false;
-search_coarsegrained("endpoint-cost-map", Constraints) ->
-	case lists:keyfind(fine_grain, 1, Constraints) of
-		false -> true;
-		_ -> false
-	end.
-
-full_report(List) when is_list(List) ->
-	lager:info("Reporting~n~n",[]),
-	lists:all(fun(E) -> lager:info("~p~n",[E]), true end, List),
-	lager:info("~n",[]).
 	
 meets_criteria(_, undefined) ->
 	false;
