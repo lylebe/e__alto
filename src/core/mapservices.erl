@@ -32,7 +32,8 @@
 		 load_defaults/0,
 		 set_default/1,
 		 is_valid_filter/1,
-		 filter_map/2
+		 filter_map/2,
+		 getPidForAddress/2
 		]).
 
 -define(DEFMAPKEY, <<"defaultmap">>).
@@ -91,6 +92,16 @@ store_map(Path,_,JSON) ->
 		Error ->
 			Error
 	end.
+
+getPidForAddress(Address,{ V4ApplicationState, V6ApplicationState }) ->
+	[Type,Value] = string:tokens(Address,":"),
+	BitStringValue = route_utils:as_bitstring(Value),
+	{ok, _, _RetValue} = case Type of 
+		"ipv4" -> trie:find_prefix_longest(BitStringValue,V4ApplicationState);
+		"ipv6" -> trie:find_prefix_longest(BitStringValue,V6ApplicationState);
+		_ -> {ok, undefined, undefined }
+	end,
+	_RetValue.
 
 %%
 %% @doc Retrieves the current version of the default map

@@ -252,7 +252,7 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 							{not_found, <<"Although the Filter request is valid the Costmap could not be located">>};
 						{true, _CostMapId} ->
 							_CostMap = registry:get_resource(_CostMapId),
-							{_Hits, _Misses} = filter_sources( ej:get({PathPrefix,"srcs"},Body), 
+							{_Hits, _Misses} = filter( ej:get({PathPrefix,"srcs"},Body), 
 																ej:get({PathPrefix,"dsts"},Body), 
 																Constraints,
 																_CostMap,
@@ -260,7 +260,9 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 																MapPrefix),
 							_FinalResult = case search_coarsegrained(MapPrefix, Constraints) of
 								false -> _Hits;
-								true -> _Hits %% TODO - Add coarse grained searches
+								true -> 
+										_X = searchMaps(CostMetric, CostMode, _CostMapId,_Hits,_Misses,Constraints),
+										_Hits %% TODO - Add coarse grained searches
 							end,
 							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
 															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
@@ -270,77 +272,116 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 		{false, SomeErrors } ->
 			{error, SomeErrors}
 	end. 
+
+searchMaps(CostMetric,CostMode,SearchedMap,CurrentHits,CurrentMisses,Constraints) ->	
+	_CandidateMaps = findCandidateMaps(CostMetric,CostMode,SearchedMap).
+
+%% Tech Debt 2$ - When _Resource is found execute search here rather than storing the map.
+%% If we finish the search early we don't have to keep iterating
+findCandidateMaps(CostMetric,CostMode,SearchedMap) ->
+	{_, _Indices } = metrics:indexOf(CostMetric,CostMode),
+	lager:info("Index search returned ~p",[_Indices]),
+	{_,_Results} = lists:foldl(fun({_MapType,_Granularity,_ResourceId,_Version,_},{_SearchedMap,AccList}=AccIn) ->
+					lager:info("Looking for ~p",[binary_to_list(_ResourceId)]),
+					case (_SearchedMap == _ResourceId)  of
+						true -> AccIn;
+						false ->
+								lager:info("Looking to add ~p / ~p",[_ResourceId,_Version]),
+								case registry:get_resource(_ResourceId,_Version) of
+									not_found -> { _SearchedMap, AccList };
+									_ -> { _SearchedMap, [{_MapType,_ResourceId}]++AccList }
+								 end
+					end
+				end,
+				{ SearchedMap, [] },
+				_Indices),
+	lager:info("Candidate Map Results are ~p",[_Results]),
+	_Results.
+
+filter([],_,_,_,{_Results,_Misses}=ReturnValue,_) ->
+	full_report(["Returning",_Results,_Misses]),
+	ReturnValue;
+filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix) ->
+	{_Hits,_Misses} = case applyConstraints(Prefix,H,Constraints,Map,[],[]) of
+		{[], _ } -> {Hits, [{row,H}] ++ Misses};
+		{_Hits2, _Misses2} -> {Hits ++ _Hits2, Misses ++ _Misses2}
+	end,
+	filter(T,undefined,Constraints,Map,{_Hits,_Misses},Prefix);
+filter(undefined,ColumnFilter,Constraints,Map,ReturnValue,Prefix) ->
+	filter(getRowNames(Prefix,Map),ColumnFilter,Constraints,Map,ReturnValue,Prefix);
+filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix) ->
+	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,Hits,Misses),
+	filter(T,ColumnFilter,Constraints,Map,{_Hits,_Misses},Prefix).
+
+applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
+	{_, R1, R2} = case ej:get({Prefix,RowName},Map) of
+		undefined -> { undefined, Hits, [{row,RowName}] ++ Misses };
+		{struct, Value} -> lists:foldl(fun({Dst,Val}=E,{_Constraints, _Hits,_Misses}) -> 
+								case meets_criteria(_Constraints,Val) of
+								 true -> {_Constraints, [E] ++ _Hits, _Misses};
+								 false -> {_Constraints, _Hits, [{RowName,Dst}] ++ _Misses}
+								end
+							 end,
+							 {Constraints, Hits, Misses},
+							 Value)
+	end,
+	{R1,R2}.							
+
+filterRow(_,_,[],_,_,Hits,Misses) ->
+	{Hits,Misses};
+filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses) ->
+	{_Hits,_Misses} = case getValue(Prefix,RowName,H,Map,false,Constraints) of
+		undefined -> { Hits, [{srcdest, RowName, H}] ++ Misses };
+		Val ->  { [{H,Val}] ++ Hits, Misses }
+	end,
+	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses).
+
+getRow(MapPrefix,Map,Row) ->
+	ej:get({MapPrefix,Row},Map).
+	
+getRowNames(MapPrefix,Map) ->
+	case ej:get({MapPrefix},Map) of
+		undefined -> [];
+		{struct, List} -> lists:foldl(fun({_RowName,_},AccIn) -> [_RowName] ++ AccIn end, [], List)
+	end. 
+
+getValue(MapPrefix,Src,Dst) ->
+	getValue(MapPrefix,Src,Dst,false).
+
+getValue(MapPrefix,Src,Dst,Criteria) ->
+	getValue(MapPrefix,Src,Dst,false,Criteria).
+
+getValue(MapPrefix,Src,Dst,Map,CanSwitch) ->
+	case ej:get({MapPrefix,Src,Dst},Map) of
+		undefined -> case CanSwitch of 
+				true -> getValue(MapPrefix,Dst,Src,Map,false);
+				false -> undefined
+			end;
+		Value -> Value
+	end.
+	
+getValue(MapPrefix,Src,Dst,Map,CanSwitch,Criteria) ->
+	_Val = getValue(MapPrefix,Src,Dst,Map,CanSwitch),
+	case meets_criteria(Criteria, _Val) of
+		true -> _Val;
+		false -> undefined
+	end.
 	
 search_coarsegrained("cost-map", _) ->
 	false;
 search_coarsegrained("endpoint-cost-map", Constraints) ->
 	case lists:keyfind(fine_grain, 1, Constraints) of
-		false -> false;
-		_ -> true
+		false -> true;
+		_ -> false
 	end.
 
 full_report(List) when is_list(List) ->
 	lager:info("Reporting~n~n",[]),
 	lists:all(fun(E) -> lager:info("~p~n",[E]), true end, List),
 	lager:info("~n",[]).
-
-filter_sources(undefined,Dsts,Constraints,CostMap,{AccIn,Misses},MapPrefix) ->
-	{struct, Pids} = ej:get({MapPrefix},CostMap),
-	{_,_,_Results,_Misses} = lists:foldl(fun({E,Val},{_Dsts,_Constraints,List,_Misses}) -> 
-											{_X,_Y} = filter_dest(E,Val,_Dsts,_Constraints,List),
-											_Z = case length(_Y) of
-												0 -> _Misses;
-												_ ->  [{src,E,dsts,_Y}] ++ _Misses
-											end,
-											{_Dsts, _Constraints, _X, _Z}
-										 end, 
-								{Dsts,Constraints,AccIn,Misses}, 
-								Pids),
-	full_report(["Returning",_Results,_Misses]),
-	{_Results,_Misses};
-filter_sources([],_,_,_,AccIn,_) ->
-	AccIn;
-filter_sources([H|T],Dsts,Constraints,CostMap,{AccIn,Misses},MapPrefix) ->
-	case ej:get({MapPrefix,H},CostMap) of
-		undefined ->
-			filter_sources(T,Dsts,Constraints,CostMap,{AccIn,[{src,H,dsts,all}]++Misses},MapPrefix);
-		{struct, Attrs} ->
-			{NewAccIn,_NewMisses} = filter_dest(H, {struct,Attrs}, Dsts, Constraints, AccIn),
-			_NextMisses = case length(_NewMisses) of
-				0 -> Misses;
-				_ -> [{src,H,dsts,_NewMisses}] ++ Misses
-			end,
-			filter_sources(T,Dsts,Constraints,CostMap,{NewAccIn,_NextMisses},MapPrefix)
-	end.
 	
-filter_dest(undefined,{Name,{struct,Attrs}},DstsFilter,Constraints,AccIn) ->
-	filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AccIn);
-filter_dest(Name,{struct,Attrs},DstsFilter,Constraints,AttrList) ->
-	case filter_destinations(Attrs,DstsFilter,Constraints,[]) of 
-		{[],Misses} -> {AttrList,Misses};
-		{AttList,Misses} -> {[{Name, {struct, AttList}}] ++ AttrList, Misses}
-	end.	
-	
-filter_destinations([{_,Val}=H|T],undefined,Constraints,AccIn) ->
-	case meets_criteria(Constraints,Val) of
-		false -> filter_destinations(T,undefined,Constraints,AccIn);
-		true -> filter_destinations(T,undefined,Constraints,[H]++AccIn)
-	end;
-filter_destinations(Dsts,[],Constraints,_) ->
-	filter_destinations(Dsts,undefined,Constraints,[]);
-filter_destinations([],undefined,_,AccIn) ->
-	{AccIn,[]};
-filter_destinations([],MissedElements,_,AccIn) ->
-	{AccIn,MissedElements};
-filter_destinations([{Dest,Val}|T],DestsFilter,Constraints,AccIn) ->
-	case (lists:member(Dest,DestsFilter) andalso (meets_criteria(Constraints,Val))) of
-		false -> 
-			filter_destinations(T,DestsFilter,Constraints,AccIn);
-		true ->
-			_NewDests = lists:delete(Dest,DestsFilter),
-			filter_destinations(T,_NewDests,Constraints,[{Dest,Val}]++AccIn)
-	end.
-	
+meets_criteria(_, undefined) ->
+	false;
 meets_criteria([], _) ->
 	true;
 meets_criteria([{Operator,Discriminator}|T], Value) ->

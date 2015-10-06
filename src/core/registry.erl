@@ -56,6 +56,7 @@
 		
 		 get_resource/1, 
 		 get_resource/2, 
+		 get_resource/3,
 		 updateResource/4,
 		 updateResource/5,
 		 
@@ -126,17 +127,27 @@ get_resource(ResourceId) ->
 	get_resource(ResourceId, undefined).
 
 %%
-%% @doc Get the specific version of the resource
+%% @doc Get the specific version of the resource with no options
 %%
 get_resource(ResourceId, Vtag) ->
+	get_resource(ResourceId, Vtag, []).
+
+%%
+%% @doc Get the specific version of the resource with Options included.
+%%
+get_resource(ResourceId, Vtag, Options) ->
 	Retval = case Vtag of 
 		undefined ->
 			e_alto_backend:get_latest_version(ResourceId);
 		_ ->
 			e_alto_backend:get_item(ResourceId,Vtag)
 	end,
-	case Retval of
-		{_, _, _, { _, Resource, _ }, _ } -> Resource;
+	case Retval of		
+		{_, _, _, { _, Resource, AppState }, _ } -> 
+			case lists:member("appstate",Options) of
+				true -> { Resource, AppState };
+				false -> Resource
+			end;
 		_ -> not_found
 	end.	
 	

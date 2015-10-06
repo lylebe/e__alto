@@ -15,8 +15,7 @@
 %% @author Lyle Bertz <lyleb551144@gmail.com>
 %% @copyright Copyright 2015 Lyle Bertz
 %%
-%% @doc Extensions of the ej module (http://github.com/set/ej) to provide
-%% support for JSON Merge Patch (RFC 7396) and JSON Patch (RFC 6902).
+%% @doc Route utility functions.
 %%
 %% @end
 -module(route_utils).
@@ -39,6 +38,23 @@ err_to_string({Overlap1,Overlap2}, Verbose) ->
 		false -> Overlap1 ++ " overlaps " ++ Overlap2 ++ "~n"
 	end.	
 
+%% TODO - Once this is okay use it to replace the same code below in 
+%% 'build_bitstring_trie' function.
+as_bitstring(CIDR) ->
+	{BaseString,NetMask,BaseAddress} = case cidr_to_int(CIDR) of
+		{Addr1, nil} ->
+			{ip_to_int(Addr1),0,Addr1};
+		{Addr2, Mask} -> 
+			{base_address(Addr2,Mask),Mask,Addr2}
+	end,
+	[BinaryString] = io_lib:format("~.2B",[BaseString]),
+	case (size(BaseAddress)) of
+		4 -> %Pad to length.
+				_Str1=lists:flatten(lists:duplicate(32-length(BinaryString),"0") ++ BinaryString);
+		8 -> 
+				_Str2=lists:flatten(lists:duplicate(128-length(BinaryString),"0") ++ BinaryString)
+	end.
+
 cidr_to_int(Cidr) when is_binary(Cidr) ->
 	cidr_to_int(binary_to_list(Cidr));
 cidr_to_int(Cidr) ->
@@ -46,7 +62,10 @@ cidr_to_int(Cidr) ->
 	case inet:parse_address(Address) of
 		{ok, FinalAddress} ->
 			case length(Mask) of
-				0 -> { FinalAddress, 32 };
+				0 -> case size(FinalAddress) of
+					  4 -> { FinalAddress, 32 };
+					  _ -> { FinalAddress, 128 }
+					end;
 				_ -> { FinalAddress, list_to_integer(lists:nth(1,Mask)) }
 			end;
 		_ ->
@@ -205,3 +224,4 @@ build_bitstring_trie([{CIDR,Data}|T], Trie) ->
 		false -> string:sub_string(_Str,1,NetMask)
 	end,
 	build_bitstring_trie(T, trie:store(Prefix,Data,Trie) ).
+

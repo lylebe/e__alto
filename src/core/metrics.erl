@@ -32,6 +32,7 @@
 		  gen_metrics/1,
 		  get_metricnames/1,
 		  indexOf/1,
+		  indexOf/2,
 		  addToIndex/6,
 		  removeFromIndex/2
 		   ]).
@@ -163,8 +164,15 @@ removeFromSet(Metric, Set) ->
 -spec indexOf(Metric :: #costmetric{}) -> any().
 
 indexOf(Metric) when is_record(Metric,costmetric) ->
-	_Key = { index, metric_to_EJSON(Metric) },
+	_Key = { index, Metric#costmetric.metric, Metric#costmetric.mode },
 	e_alto_backend:get_constant(_Key).
+
+-spec indexOf(Metric :: binary(),
+			  Mode :: binary() ) -> any().
+
+indexOf(Metric, Mode) ->
+	_Key = { index, Metric, Mode },
+	e_alto_backend:get_constant(_Key).	
 
 -spec addToIndex(Metric :: #costmetric{},
 				 Type :: basetype(),
@@ -174,7 +182,7 @@ indexOf(Metric) when is_record(Metric,costmetric) ->
 				 SomeData :: any()) -> atom().
 				 
 addToIndex(Metric, Type, SubType, ResourceId, Tag, SomeData) ->
-	_Key = { index, metric_to_EJSON(Metric) },
+	_Key = { index, Metric#costmetric.metric, Metric#costmetric.mode },
 	_NewValue = case e_alto_backend:get_constant(_Key) of
 		not_found -> [{ Type, SubType, ResourceId, Tag, SomeData}];  
 		{_, Value} -> [{ Type, SubType, ResourceId, Tag, SomeData}] ++ Value
@@ -185,7 +193,7 @@ addToIndex(Metric, Type, SubType, ResourceId, Tag, SomeData) ->
 					  ResourceId :: any()) -> list().
 					  
 removeFromIndex(Metric, ResourceId) -> 
-	_Key = { index, metric_to_EJSON(Metric) },
+	_Key = { index, Metric#costmetric.metric, Metric#costmetric.mode },
 	case e_alto_backend:get_constant(_Key) of
 		not_found -> not_found;
 		{_, Value} -> 	
