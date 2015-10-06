@@ -15,7 +15,6 @@ Funtcionality that has been tested
 
 TODO
 - Endpoint Cost Service (coarse grained search)
-- Reorganize Filters for coarse/fine grained values
 
 Install / Build
 ---------------
