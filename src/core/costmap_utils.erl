@@ -102,7 +102,7 @@ valid_constraint(Condition,Units) when is_binary(Condition) ->
 valid_constraint(Condition,Units) when is_atom(Units) ->
 	[_Operator, _Value] = string:tokens(Condition, " "),
 	case (_Operator == "finegrain") of 
-		true -> { fine_grain, 1.0 };
+		true -> { ?FG, 1.0 };
 		false ->
 			{_ValType,_NumValue} = to_unit(_Value),
 			_ErrorC1 = case lists:member(_Operator, ["gt","lt","ge","le","eq"]) of 
@@ -251,62 +251,63 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 						{true, not_found} ->
 							{not_found, <<"Although the Filter request is valid the Costmap could not be located">>};
 						{true, _CostMapId} ->
-							_CostMap = registry:get_resource(_CostMapId),
-							{_Hits, _Misses} = applyFilters( [ {ej:get({PathPrefix,"srcs"},Body), 
-																ej:get({PathPrefix,"dsts"},Body) } ], 
-																Constraints,
-																_CostMap,
-																{[],[]},
-																MapPrefix),
-							%%TODO - Rework when rest of code is ready
-							_FinalResult = case search_coarsegrained(MapPrefix, Constraints) of
-								false -> _Hits;
-								true -> 
-										_X = searchMaps(CostMetric, CostMode, _CostMapId,_Hits,_Misses,Constraints,MapPrefix),
-										_Hits %% TODO - Add coarse grained searches
+							_SeachType = getSearchType(MapPrefix,Constraints),
+							{_, _Indices } = metrics:indexOf(CostMetric,CostMode),
+							%%Move the map we want to search to the head of the line in the indices
+							_Indices1 = case lists:keytake(_CostMapId,3,_Indices) of
+								false -> _Indices;
+							 	 {value, Key, TupleList2 } -> lists:append([Key],TupleList2)
 							end,
-							%%TODO - Fix bug below that will return <<"cost-map">> even for endpoints...
-							{ struct, [{<<"meta">>, {struct,[ {<<"dependent-vtags">>, ej:get({"meta","dependent-vtags"},_CostMap)},
-															  {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
-										   {<<"cost-map">>, _FinalResult}]}
+							SearchMapType = case MapPrefix of 
+								"cost-map" -> costmap;
+								"endpoint-cost-map" -> epcostmap
+							end,							
+							{ _FinalResult, _ } = searchMaps(_Indices1,getSearchType(MapPrefix,Constraints),SearchMapType,[],
+								[ {ej:get({PathPrefix,"srcs"},Body), ej:get({PathPrefix,"dsts"},Body) } ], Constraints),
+	
+							_CostMap = registry:get_resource(_CostMapId),
+							_PrelimResult = { struct, [{<<"meta">>, {struct,[ {<<"cost-type">>, ej:get({"meta","cost-type"},_CostMap)} ] } },	
+										      { list_to_binary(MapPrefix), _FinalResult } ] },
+							case SearchMapType of
+								costmap ->
+									ej:set({<<"meta">>,<<"dependent-vtags">>}, _PrelimResult, ej:get({"meta","dependent-vtags"},_CostMap)); 
+							    epcostmap ->
+									_PrelimResult
+							end
 					end
 			end;
 		{false, SomeErrors } ->
 			{error, SomeErrors}
 	end. 
-
-%%TODO - Get rid of this code when Full Searching is complete	
-search_coarsegrained("cost-map", _) ->
-	false;
-search_coarsegrained("endpoint-cost-map", Constraints) ->
-	case lists:keyfind(fine_grain, 1, Constraints) of
-		false -> true;
-		_ -> false
-	end.
 	
 getSearchType("cost-map", _) ->
-	coarse;
+	?CG;
 getSearchType("endpoint-cost-map", Constraints) ->
-	case lists:keyfind(fine_grain, 1, Constraints) of
+	case lists:keyfind(?FG, 1, Constraints) of
 		false -> unknown;
-		_ -> fine_grain
+		_ -> ?FG
 	end.
 
 full_report(List) when is_list(List) ->
 	lager:info("Reporting~n~n",[]),
 	lists:all(fun(E) -> lager:info("~p~n",[E]), true end, List),
 	lager:info("~n",[]).
-
-searchMaps(CostMetric,CostMode,SearchedMap,CurrentHits,CurrentMisses,Constraints,MapPrefix) ->
-	_SeachType = getSearchType(MapPrefix,Constraints),
-	{_, _Indices } = metrics:indexOf(CostMetric,CostMode).
-	%%TODO - Iterate over entries while misses is not empty and we can search more maps
+	
+%% Iterates over entries while misses is not empty and we can search more maps
+searchMaps(_,_,_,Hits,[],_) ->
+	{ Hits, [] };
+searchMaps([],_,_,Hits,Misses,_) ->
+	{ Hits, Misses };
+searchMaps([H|T],SearchType,SearchMapType,Hits,Misses,Constraints) ->
+	{ _Hits, _Misses } = searchMaps1(H,SearchType,SearchMapType,Hits,Misses,Constraints),
+	searchMaps(T,SearchType,SearchMapType,_Hits,_Misses,Constraints).
 	
 searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,Hits,Misses,Constraints) ->
 	%%Valid Search Conditions
 	%%1. Both are fine grained and epcs
 	%%2. or non-finegrain
-	case (((MapType == epcostmap) andalso (SearchMapType == epcostmap) andalso (SearchType == fine_grain)) or (SearchType =/= fine_grain)) of
+	lager:info("Searching ~p / ~p / ~p",[atom_to_list(MapType),atom_to_list(Granularity),ResourceId]),
+	case (((MapType == epcostmap) andalso (SearchMapType == epcostmap) andalso (SearchType == ?FG) and (Granularity == ?FG)) or (SearchType =/= ?FG)) of
 		false -> { Hits, Misses };
 		true -> case registry:get_resource(ResourceId,Version) of
 					not_found -> { Hits, Misses };
@@ -320,12 +321,15 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 						    {epcostmap, epcostmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "endpoint-cost-map");		
 							{epcostmap, costmap} -> %Not a valid search option
 								{Hits,Misses};
-							{costmap, epcostmap} -> %TODO - Translate Misses to the PIDs in the Target Map (if possible) then search
+							{costmap, epcostmap} -> 
+							%TODO - Translate Misses to the PIDs in the Target Map (if possible) then searcha
+								lager:info("Executing costmap search for an epcostmap",[]),
 								{Hits,Misses}
 						end
 				end
 	end.
 
+%% Tech Debt $4 We need to better organize these in lists so they don't get so bloated on the server.
 insertMiss(row,Src,_,Misses) ->
 	[ { [Src], undefined } ] ++ Misses;
 insertMiss(column,_,Dst,Misses) ->
@@ -351,22 +355,29 @@ filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix) ->
 filter(undefined,ColumnFilter,Constraints,Map,ReturnValue,Prefix) ->
 	filter(getRowNames(Prefix,Map),ColumnFilter,Constraints,Map,ReturnValue,Prefix);
 filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix) ->
-	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,Hits,Misses),
-	filter(T,ColumnFilter,Constraints,Map,{_Hits,_Misses},Prefix).
+	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,[],Misses),
+	_NewHits = case length(_Hits) of
+	 0 -> Hits;
+	 _ -> [{H,{struct,_Hits}}] ++ Hits
+	end,
+	filter(T,ColumnFilter,Constraints,Map,{ _NewHits,_Misses},Prefix).
 
 applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
-	{_, R1, R2} = case ej:get({Prefix,RowName},Map) of
+	{_, R1} = case ej:get({Prefix,RowName},Map) of
 		undefined -> { undefined, Hits, [{row,RowName}] ++ Misses };
-		{struct, Value} -> lists:foldl(fun({Dst,Val}=E,{_Constraints, _Hits,_Misses}) -> 
+		{struct, Value} -> lists:foldl(fun({_,Val}=E,{_Constraints, _Hits}) -> 
 								case meets_criteria(_Constraints,Val) of
-								 true -> {_Constraints, [E] ++ _Hits, _Misses};
-								 false -> {_Constraints, _Hits, insertMiss(position,RowName,Dst,Misses)}
+								 true -> {_Constraints, [E] ++ _Hits };
+								 false -> {_Constraints, _Hits }
 								end
 							 end,
-							 {Constraints, Hits, Misses},
+							 { Constraints, [] },
 							 Value)
 	end,
-	{R1,R2}.							
+	case length(R1) of
+	 0 -> { Hits, Misses };
+	 _ -> { [{RowName,{struct, R1}}] ++ Hits, Misses}
+	end.							
 
 filterRow(_,_,[],_,_,Hits,Misses) ->
 	{Hits,Misses};
@@ -403,6 +414,8 @@ getValue(MapPrefix,Src,Dst,Map,CanSwitch) ->
 	
 getValue(MapPrefix,Src,Dst,Map,CanSwitch,Criteria) ->
 	_Val = getValue(MapPrefix,Src,Dst,Map,CanSwitch),
+	%%lager:info("Executing Criteria with src=~p, dst=~p and prefix=~p with Criteria=~p",[Src,Dst,MapPrefix,Criteria]),
+	%%lager:info("Got a VALUE of ~p with map ~p",[_Val,Map]),
 	case meets_criteria(Criteria, _Val) of
 		true -> _Val;
 		false -> undefined
@@ -420,7 +433,7 @@ meets_criteria([{Operator,Discriminator}|T], Value) ->
 		ne -> Value =/= Discriminator;
 		lt -> Value < Discriminator;
 		gt -> Value > Discriminator;
-		fine_grain -> true
+		?FG -> true
 	end,
 	case _TestResult of
 		false -> false;

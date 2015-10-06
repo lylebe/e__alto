@@ -65,6 +65,8 @@ store_costmap(Path,_,JSON) ->
 			_CostMode = ej:get({"meta","cost-type","cost-mode"},Costmap),
 			_CostMetric = ej:get({"meta","cost-type","cost-metric"},Costmap),
 			_ResourceId = << _CostMode/bitstring, _CostMetric/bitstring >>,
+			%% TODO - Look @ Resource Key in epcostservices and see if that needs to be here to 
+			%% avoid awkward collisions in naming
 			registry:updateResource(_ResourceId, _MapTag, costmap, Costmap, ApplicationState),
 			lager:info("Map ~p has been stored. Updating IRD",[_ResourceId]),
 			
@@ -95,7 +97,7 @@ store_costmap(Path,_,JSON) ->
 			e_alto_backend:set_constant( list_to_binary(_FilterPath ++ ?FILTEREXT), [ {metrics:metric_to_EJSON(_Metric), _ResourceId} ]),
 			
 			%Step 6 - Add the costmap to the metric
-			metrics:addToIndex(_Metric, costmap, coarse, _ResourceId, _MapTag, undefined),
+			metrics:addToIndex(_Metric, costmap, ?CG, _ResourceId, _MapTag, undefined),
 			
 			{ok, _ResourceId, Costmap};
 		{?ALTO_ERR, ErrCode, ErrMessage} ->

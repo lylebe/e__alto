@@ -30,5 +30,9 @@
 -define(E_INVALID_FIELD_VALUE, e_invalid_field_value).
 -define(ALTO_ERR, alto_error).
 
+-define(FG, fine_grain).
+-define(CG, coarse).
+-define(MIXED, unknown).
+
 -record(costmetric, { name, mode, metric, description=undefined }). 
 -record(resourceentry, { name, type, uri, mediatype, accepts=undefined, capabilities=undefined, uses=[] }).
