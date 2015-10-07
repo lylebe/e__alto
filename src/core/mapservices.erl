@@ -93,6 +93,8 @@ store_map(Path,_,JSON) ->
 			Error
 	end.
 
+getPidForAddress(Address,State) when is_binary(Address) ->
+	getPidForAddress(binary_to_list(Address), State);
 getPidForAddress(Address,{ V4ApplicationState, V6ApplicationState }) ->
 	[Type,Value] = string:tokens(Address,":"),
 	BitStringValue = route_utils:as_bitstring(Value),

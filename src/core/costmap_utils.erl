@@ -317,17 +317,33 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 							epcostmap -> "endpoint-cost-map"
 						end,
 						case { MapType, SearchMapType } of
-						    {costmap, costmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map");
-						    {epcostmap, epcostmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "endpoint-cost-map");		
+						    {costmap, costmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map",undefined);
+						    {epcostmap, epcostmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "endpoint-cost-map",undefined);		
 							{epcostmap, costmap} -> %Not a valid search option
 								{Hits,Misses};
 							{costmap, epcostmap} -> 
-							%TODO - Translate Misses to the PIDs in the Target Map (if possible) then searcha
 								lager:info("Executing costmap search for an epcostmap",[]),
-								{Hits,Misses}
+								_NetworkMap = ej:get({"meta","dependent-vtags",1,"resource-id"},_Map),
+								_NetworkMapVersion = ej:get({"meta","dependent-vtags",1,"tag"},_Map),
+								{ _, Tries } = registry:get_resource(_NetworkMap,_NetworkMapVersion,["appstate"]),
+								{_X, _Y} = applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map",{topid,Tries}),
+								{ cleanResponse(_X,{struct,[]}), _Y }
 						end
 				end
 	end.
+	
+cleanResponse([],AccIn) ->
+	AccIn;
+cleanResponse([{Src,{struct,List}} | T], AccIn) ->
+	{_,NewAcc} = lists:foldl(fun x/2, {Src,AccIn}, List),
+	cleanResponse(T,NewAcc).
+
+x({Dst,Val},{Src,AccIn}) ->
+	_R = case ej:get({Src},AccIn) of
+	  undefined -> ej:set({Src},AccIn,{struct,[{Dst,Val}]});
+	  _ -> ej:set({Src,Dst},AccIn,Val)
+	end,
+	{Src,_R}.
 
 %% Tech Debt $4 We need to better organize these in lists so they don't get so bloated on the server.
 insertMiss(row,Src,_,Misses) ->
@@ -337,30 +353,44 @@ insertMiss(column,_,Dst,Misses) ->
 insertMiss(_,Src,Dst,Misses) ->
 	[ { [Src], [Dst] } ] ++ Misses.
 
-applyFilters([],_,_,{Hits,Misses},_) ->
+applyFilters([],_,_,{Hits,Misses},_,_) ->
 	full_report(["Returning",Hits,Misses]),
 	{Hits,Misses};
-applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix) ->
-	{ _Hits, _Misses } = filter(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix),
-	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix).
+applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix,Options) ->
+	{ _Hits, _Misses } = filter(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix,Options),
+	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix,Options).
 
-filter([],_,_,_,ReturnValue,_) ->
+filter([],_,_,_,ReturnValue,_,_) ->
 	ReturnValue;
-filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix) ->
+filter(_,undefined,_,_,{Hits,Misses},_,{topid,_}) ->
+	{Hits,Misses};
+filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix,_) ->
 	{_Hits,_Misses} = case applyConstraints(Prefix,H,Constraints,Map,[],[]) of
 		{[], _ } -> {Hits, insertMiss(row,H,undefined,Misses) };
 		{_Hits2, _Misses2} -> {Hits ++ _Hits2, Misses ++ _Misses2}
 	end,
-	filter(T,undefined,Constraints,Map,{_Hits,_Misses},Prefix);
-filter(undefined,ColumnFilter,Constraints,Map,ReturnValue,Prefix) ->
-	filter(getRowNames(Prefix,Map),ColumnFilter,Constraints,Map,ReturnValue,Prefix);
-filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix) ->
-	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,[],Misses),
+	filter(T,undefined,Constraints,Map,{_Hits,_Misses},Prefix,undefined);
+filter(undefined,ColumnFilter,Constraints,Map,ReturnValue,Prefix,Options) ->
+	filter(getRowNames(Prefix,Map),ColumnFilter,Constraints,Map,ReturnValue,Prefix,Options);
+filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,{topid,Tries}) ->
+	{_Hits,_Misses} = case mapservices:getPidForAddress(H,Tries) of
+		undefined -> {Hits,[{[H],ColumnFilter}] ++ Misses};
+		Val -> %The Src translates to a PID 
+			{_Hits2,_Misses2} = filterRow(Prefix,Val,ColumnFilter,Constraints,Map,[],Misses,{topid,Tries,H}),
+			_NewHits = case length(_Hits2) of
+				 0 -> Hits;
+				 _ -> [{H,{struct,_Hits2}}] ++ Hits
+			end,
+			{ _NewHits, _Misses2 }
+	end,
+	filter(T,ColumnFilter,Constraints,Map,{_Hits,_Misses},Prefix,{topid,Tries});
+filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) ->
+	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,[],Misses,Options),
 	_NewHits = case length(_Hits) of
 	 0 -> Hits;
 	 _ -> [{H,{struct,_Hits}}] ++ Hits
 	end,
-	filter(T,ColumnFilter,Constraints,Map,{ _NewHits,_Misses},Prefix).
+	filter(T,ColumnFilter,Constraints,Map,{ _NewHits,_Misses},Prefix,Options).
 
 applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
 	{_, R1} = case ej:get({Prefix,RowName},Map) of
@@ -379,14 +409,24 @@ applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
 	 _ -> { [{RowName,{struct, R1}}] ++ Hits, Misses}
 	end.							
 
-filterRow(_,_,[],_,_,Hits,Misses) ->
+filterRow(_,_,[],_,_,Hits,Misses,_) ->
 	{Hits,Misses};
-filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses) ->
+filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses,{topid,Tries,OrigName}=Options) ->
+	{_Hits,_Misses} = case mapservices:getPidForAddress(H,Tries) of
+		undefined -> {Hits, insertMiss(position,OrigName,H,Misses)};
+		XlatedVal -> %The Dst translates to a PID 
+			{_Hits2,_Misses2} = case getValue(Prefix,RowName,XlatedVal,Map,false,Constraints) of
+				undefined -> { Hits, insertMiss(position,OrigName,H,Misses) };
+				Val ->  { [{H,Val}] ++ Hits, Misses }
+			end
+	end,	
+	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses,Options);	
+filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses,Options) ->
 	{_Hits,_Misses} = case getValue(Prefix,RowName,H,Map,false,Constraints) of
 		undefined -> { Hits, insertMiss(position,RowName,H,Misses) };
 		Val ->  { [{H,Val}] ++ Hits, Misses }
 	end,
-	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses).
+	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses,Options).
 
 getRow(MapPrefix,Map,Row) ->
 	ej:get({MapPrefix,Row},Map).

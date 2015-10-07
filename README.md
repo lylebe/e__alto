@@ -5,16 +5,19 @@ IETF Application Layer Transport Optimization (ALTO) core specification
 (RFC 7285) and, as opportunities permit, related standards.
 
 AT THIS TIME THE CODE IS ALPHA and undergoing various tests while 
-final code functions are delivered.
+final code functions are delivered for the next release.
 
 Funtcionality that has been tested
 - Map and Map Filter Services
 - Costmap and Costmap Filter Services (with constraint support)
 - Endpoint Property Service
-- Endpoint Cost Service (fine grained only)
+- Endpoint Cost Service (including fine grain search constraint support*)
 
 TODO
-- Endpoint Cost Service (coarse grained search)
+- Set up and pass the ALTO 93 interop tests.
+- Automatically start the Server.
+
+* - notes an exception to the standard
 
 Install / Build
 ---------------
