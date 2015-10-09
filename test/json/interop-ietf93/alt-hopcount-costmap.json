@@ -1,0 +1,50 @@
+{
+"meta" : {
+"dependent-vtags" : [
+{"resource-id": "alt-network-map",
+"tag": "initial"
+}
+],
+"cost-type" : {"cost-mode" : "numerical",
+"cost-metric": "hopcount"
+}
+},
+"cost-map": {
+      "dc1": {
+         "dc1": 0,  "dc2": 2,  "dc3": 2,  "dc4": 2,
+         "user1": 2,  "default": 3,  "user2": 3,  "user3": 4,
+         "user4": 5 },
+      "dc2": {
+         "dc1": 2,  "dc2": 0,  "dc3": 2,  "dc4": 2,
+         "user1": 3,  "default": 4,  "user2": 2,  "user3": 3,
+         "user4": 4 },
+      "dc3": {
+         "dc1": 2,  "dc2": 2,  "dc3": 0,  "dc4": 2,
+         "user1": 4,  "default": 4,  "user2": 3,  "user3": 2,
+         "user4": 3 },
+      "dc4": {
+         "dc1": 2,  "dc2": 2,  "dc3": 2,  "dc4": 0,
+         "user1": 5,  "default": 3,  "user2": 4,  "user3": 3,
+         "user4": 2 },
+      "default": {
+         "dc1": 3,  "dc2": 4,  "dc3": 4,  "dc4": 3 },
+      "linklocal": {
+         "linklocal": 0 },
+      "loopback": {
+         "loopback": 0 },
+      "private": {
+         "private": 0 },
+      "user1": {
+         "dc1": 2,  "dc2": 3,  "dc3": 4,  "dc4": 5,
+         "user1": 0 },
+      "user2": {
+         "dc1": 3,  "dc2": 2,  "dc3": 3,  "dc4": 4,
+         "user2": 0 },
+      "user3": {
+         "dc1": 4,  "dc2": 3,  "dc3": 2,  "dc4": 3,
+         "user3": 0 },
+      "user4": {
+         "dc1": 5,  "dc2": 4,  "dc3": 3,  "dc4": 2,
+         "user4": 0 }
+   }
+}

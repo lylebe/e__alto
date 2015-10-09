@@ -1,0 +1,50 @@
+{
+"meta" : {
+"dependent-vtags" : [
+{"resource-id": "alt-network-map",
+"tag": "initial"
+}
+],
+"cost-type" : {"cost-mode" : "numerical",
+"cost-metric": "routingcost"
+}
+},
+"cost-map": {
+      "dc1": {
+         "dc1": 0.0,  "user1": 10.0,  "user2": 15.0,  "dc2": 20.0,
+         "dc3": 20.0,  "dc4": 20.0,  "user3": 20.0,  "user4": 25.0,
+         "default": 50.0 },
+      "dc2": {
+         "dc1": 20.0,  "user1": 15.0,  "user2": 10.0,  "dc2": 0.0,
+         "dc3": 20.0,  "dc4": 20.0,  "user3": 15.0,  "user4": 20.0,
+         "default": 55.0 },
+      "dc3": {
+         "dc1": 20.0,  "user1": 20.0,  "user2": 15.0,  "dc2": 20.0,
+         "dc3": 0.0,  "dc4": 20.0,  "user3": 10.0,  "user4": 15.0,
+         "default": 55.0 },
+      "dc4": {
+         "dc1": 20.0,  "user1": 25.0,  "user2": 20.0,  "dc2": 20.0,
+         "dc3": 20.0,  "dc4": 0.0,  "user3": 15.0,  "user4": 10.0,
+         "default": 50.0 },
+      "default": {
+         "dc1": 50.0,  "dc2": 55.0,  "dc3": 55.0,  "dc4": 50.0 },
+      "linklocal": {
+         "linklocal": 0.0 },
+      "loopback": {
+         "loopback": 0.0 },
+      "private": {
+         "private": 0.0 },
+      "user1": {
+         "dc1": 10.0,  "user1": 0.0,  "dc2": 15.0,  "dc3": 20.0,
+         "dc4": 25.0 },
+      "user2": {
+         "dc1": 15.0,  "user2": 0.0,  "dc2": 10.0,  "dc3": 15.0,
+         "dc4": 20.0 },
+      "user3": {
+         "dc1": 20.0,  "dc2": 15.0,  "dc3": 10.0,  "dc4": 15.0,
+         "user3": 0.0 },
+      "user4": {
+         "dc1": 25.0,  "dc2": 20.0,  "dc3": 15.0,  "dc4": 10.0,
+         "user4": 0.0 }
+   }
+}
