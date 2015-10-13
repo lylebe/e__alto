@@ -39,8 +39,8 @@ Quick Start -
 
 2. At the erlang console start the server (the script will be fixed 
 later).
-  
-	e_alto:start().
+
+	1> e_alto:start().
 
 The IRD URI (by default) is http://localhost:8080/ 
 and specified in app.config
