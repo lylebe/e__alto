@@ -83,7 +83,7 @@ store_epcs(Path, ResourceKey, JSON) ->
 			_FilterKey = list_to_binary(_FilterPath ++ ?FILTEREXT),
 			_NewValue = case e_alto_backend:get_constant( _FilterKey ) of
 				not_found ->  [ {metrics:metric_to_EJSON(_Metric), ResourceKey} ];
-				Value -> metrics:addToSet(_Metric, ResourceKey, Value)
+				{_, Value} -> metrics:addToSet(_Metric, ResourceKey, Value)
 			end,
 			e_alto_backend:set_constant(_FilterKey, _NewValue),			
 	

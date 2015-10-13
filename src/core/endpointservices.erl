@@ -143,8 +143,9 @@ store_endpoints(Path,ResourceKey,Data) ->
 			%%EP data before cleaning
 			_LatestSpace = case registry:get_resource(ResourceKey) of
 				not_found -> trie:new();
-				{struct, _OldJSON} -> 
-					remove_eps(_Space,_OldJSON)
+				_OldJSON -> 
+					{struct, _Attrs} = ej:get({"endpoint-properties"},_OldJSON),
+					remove_eps(_Space,_Attrs)
 			end,
 			
 			registry:updateResource(ResourceKey, epprops, JSON, nothing),			
@@ -231,10 +232,14 @@ remove_eps(SomeValue,_) when is_atom(SomeValue) ->
 	trie:new();
 remove_eps(Space,[]) ->
 	Space;
+remove_eps(Space,[{Name,_}|T]=List) when is_list(List), is_binary(Name) ->
+	remove_eps( trie:erase(binary_to_list(Name),Space), T);
+remove_eps(Space,[H|T]=List) when is_list(List), is_binary(H) ->
+	remove_eps( trie:erase(binary_to_list(H),Space), T);	
 remove_eps(Space,[{Name,_}|T]=List) when is_list(List) ->
 	remove_eps( trie:erase(Name,Space), T);
 remove_eps(Space,[H|T]=List) when is_list(List) ->
-	remove_eps( trie:erase(H,Space), T).	
+	remove_eps( trie:erase(H,Space), T).
 	
 remove_ep(Space,EPAddress) when is_atom(Space) ->
 	trie:new();
