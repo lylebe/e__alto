@@ -6,13 +6,14 @@
   {applications, [
                   kernel,
                   stdlib,
+		  compiler,
+		  syntax_tools,
+		  goldrush,
+		  lager,
+		  crypto,
                   ranch,
-                  crypto,
                   cowlib,
-                  cowboy,
-                  compiler,
-                  lager,
-				  syntax_tools
+                  cowboy
                  ]},
   {mod, { e_alto, []}},
   {env, []}

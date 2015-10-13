@@ -21,15 +21,18 @@ TODO
 
 Install / Build
 ---------------
-1. Install Erlang. The code is built using R16B03 but it does not use maps 
+1. Install Erlang. The code is built using R18 but it does not use maps 
 so it *may* work on earlier versions but is untested.
-2. Build with rebar (install if you don't have it).  From the base 
-directory.  (Don't forget to get dependencies first!)
-> e_alto$ ./rebar get-deps
-> e_alto$ ./rebar compile
+2. Install rebar3.
+3. Clone
+	<base path>$ git clone https://github.com/lylebe/e__alto.git
+4. Copy rebar3 into the e__alto directory.
+5. Build with rebar3 from the base directory. 
+	e_alto$ ./rebar3 compile
 
 Usage
------ 
+-----
+Quick Start - 
 1. Run the start script.
 
 	e_alto$ ./start.sh

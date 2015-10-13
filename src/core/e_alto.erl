@@ -81,6 +81,7 @@ start() ->
 	ok.
 
 start(_StartType, _StartArgs) ->
+	init(),
     {_, DefaultRoute} = e_alto_backend:get_constant(<<"routelist">>),
     Dispatch = compileRouteList(DefaultRoute),
     {ok, _} = cowboy:start_http(alto_handler, 100, [{port, 8080}],
