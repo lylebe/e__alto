@@ -33,7 +33,8 @@
 		 set_default/1,
 		 is_valid_filter/1,
 		 filter_map/2,
-		 getPidForAddress/2
+		 getPidForAddress/2,
+		 load_default_map/0
 		]).
 
 -define(DEFMAPKEY, <<"defaultmap">>).

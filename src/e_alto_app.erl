@@ -2,7 +2,7 @@
 %
 % Licensed under the Apache License, Version 2.0 (the "License");
 % you may not use this file except in compliance with the License.
-% You may obtain a copy of the License at
+% You may obtain a copy of sthe License at
 %
 %     http://www.apache.org/licenses/LICENSE-2.0
 %
@@ -21,29 +21,23 @@
 %% Base code for this is from 
 %% 
 %% @end
--module(e_alto).
+-module(e_alto_app).
+-behavior(application).
+
+-define(SUP_PID,supervisorpid).
 
 %% Application callbacks
--export([start/0, start/2, stop/1, init/0]).
+-export([start/0, start/2, start_app/2, stop/1, shutdown/0]).
 
--include ("e_alto.hrl").
+-include ("core/e_alto.hrl").
 
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
+initialize() ->
+	AppList1 = [ goldrush, lager, crypto, ranch, cowlib, cowboy ],
+	lists:foreach(fun application:start/1, AppList1),
 
-init() ->
-	application:start(compiler),
-	application:start(syntax_tools),
-	application:start(goldrush),
-	application:start(lager),
-	AppList = [
-		crypto,
-		ranch,
-		cowlib,
-		cowboy
-	],
-	lists:foreach(fun load_app/1, AppList),
 	application:load(e_alto),
 	e_alto_backend:init(),
 
@@ -69,28 +63,27 @@ add_route_info(ApplicationType, {Path,X}, List) ->
 	lager:info("Adding ~p, ~p and ~p",[Path,X,List]),
 	[ {ApplicationType, Path} ] ++ List.
 
-load_app(App) ->
-	 case application:start(App) of 
-		ok-> lager:info("Applcation ~p started",[App]);
-	    {error, Reason} -> lager:info("Application ~p start failed with Reason ~p",[App,Reason])
-	  end.
-
-start() ->
-	init(),
-	start([], []),
-	ok.
+start() -> start_app(?APPLICATIONNAME).
 
 start(_StartType, _StartArgs) ->
-	init(),
+	initialize(),
     {_, DefaultRoute} = e_alto_backend:get_constant(<<"routelist">>),
     Dispatch = compileRouteList(DefaultRoute),
     {ok, _} = cowboy:start_http(alto_handler, 100, [{port, 8080}],
         [{env, [{dispatch, Dispatch}]}]
     ),
     lager:info("Cowboy started on port 8080",[]),
-    e_alto_sup:start_link().
+    lager:warning("start/2 exiting",[]),
+    {ok, Pid} = e_alto_sup:start_link(),
+    e_alto_backend:set_constant(?SUP_PID,Pid),
+    {ok, Pid}.
+
+shutdown() -> 
+	stop(shutdown),
+	exit(normal).
 
 stop(_State) ->
+	application:stop(cowboy),
     ok.
 
 add_route(AppType,Route) ->
@@ -135,7 +128,20 @@ compileRouteList(List) ->
 								end,
 								[], List) },
 	lists:foreach(fun({Path,Handler,_}) -> 
-		lager:info("Path = ~p with Handler = ~p",[Path,atom_to_list(Handler)])
+		lager:info("Configured Path = ~p with Handler = ~p",[Path,atom_to_list(Handler)])
 	  end,
 	  element(2,Routes)),
 	cowboy_router:compile([ Routes ]).
+
+%% Impressed by logplex's app starting so I borrowed some here.
+start_app(App) -> start_app(App,transient).
+
+start_app(App,Type) ->  start_app(App, Type, application:start(App, Type)).
+	
+start_app(_App, _Type, ok) -> ok;
+start_app(_App, _Type, {error, {already_started, _App}}) -> ok;
+start_app(App, Type, {error, {not_started, Dep}}) ->
+    ok = start_app(Dep, Type),
+    start_app(App, Type);
+start_app(App, _Type, {error, Reason}) ->
+    erlang:error({app_start_failed, App, Reason}).

@@ -2,19 +2,20 @@
  [
   {description, ""},
   {vsn, "0.1.0"},
-  {registered, []},
+  {registered, [e_alto_sup]},
   {applications, [
                   kernel,
                   stdlib,
-		  compiler,
-		  syntax_tools,
-		  goldrush,
-		  lager,
-		  crypto,
-                  ranch,
+				  compiler,
+				  syntax_tools,
+				  goldrush,
+				  lager,
+				  crypto,
+				  ranch,
                   cowlib,
                   cowboy
                  ]},
-  {mod, { e_alto, []}},
+  {mod, { e_alto_app, []}},
   {env, []}
  ]}.
+
