@@ -76,7 +76,7 @@ store_map(Path,_,JSON) ->
 			_ResourceEntry = resources:resource_to_record(networkmap,
 				_ResourceId,
 				list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
-				[ <<"application/alto-networkmap+json">> ],
+				<<"application/alto-networkmap+json">>,
 				[],
 				[],
 				[]),

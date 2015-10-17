@@ -62,7 +62,7 @@ store_epcs(Path, ResourceKey, JSON) ->
 			_ResourceEntry = resources:resource_to_record(costmap,
 							_ResourceId,
 							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
-							[ <<"application/alto-costmap+json">> ],
+							<<"application/alto-costmap+json">>,
 							[],
 							[ {<<"cost-type-names">>, [_Metric]}, { <<"cost-constraints">>, <<"true">>}],
 							[]),
