@@ -44,7 +44,8 @@ resource_to_record(Type, Name, URI, MediaType)  when is_atom(type), is_binary(Na
 						 Accepts :: list(),
 						 Capabilities :: list(),
 						 Uses :: list()) -> #resourceentry{}.
-resource_to_record(Type, Name, URI, MediaType, Accepts, Capabilities, Uses) when is_atom(type), is_binary(Name), is_binary(URI), is_list(MediaType), is_list(Accepts), is_list(Capabilities), is_list(Uses) ->
+resource_to_record(Type, Name, URI, MediaType, Accepts, Capabilities, Uses) when is_atom(type), is_binary(Name), is_binary(URI), is_binary
+(MediaType), is_list(Accepts), is_list(Capabilities), is_list(Uses) ->
 	#resourceentry{ type=Type, name=Name, uri=URI, mediatype=MediaType, accepts=Accepts, capabilities=Capabilities, uses=Uses }.
 
 -spec resource_to_JSON(Resource :: #resourceentry{}) -> list().
