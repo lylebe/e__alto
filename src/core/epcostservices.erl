@@ -53,7 +53,8 @@ store_epcs(Path, ResourceKey, JSON) ->
 			%%Get the ResourceId
 			_CostMode = ej:get({"meta","cost-type","cost-mode"},EPCostmap),
 			_CostMetric = ej:get({"meta","cost-type","cost-metric"},EPCostmap),
-			_ResourceId = << _CostMode/bitstring, _CostMetric/bitstring >>,
+			_NextId = resources:next_id(),
+			_ResourceId = << _NextId/binary, <<"_">>/binary, _CostMode/bitstring, _CostMetric/bitstring >>,
 			registry:updateResource(ResourceKey, epcostmap, EPCostmap, ApplicationState),
 			
 			%Step 2 - update IRD
@@ -64,7 +65,7 @@ store_epcs(Path, ResourceKey, JSON) ->
 							list_to_binary(application:get_env(?APPLICATIONNAME, uri_base, "http://localhost") ++ Path),
 							<<"application/alto-costmap+json">>,
 							[],
-							[ {<<"cost-type-names">>, [_Metric]}, { <<"cost-constraints">>, <<"true">>}],
+							[ {<<"cost-type-names">>, [_Metric]}, { <<"cost-constraints">>, true}],
 							[]),
 			_IRD1 = resources:updateIRD(_ResourceEntry,_IRD0),				
 			registry:updateIRD( _IRD1 ),

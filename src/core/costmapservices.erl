@@ -64,7 +64,8 @@ store_costmap(Path,_,JSON) ->
 			
 			_CostMode = ej:get({"meta","cost-type","cost-mode"},Costmap),
 			_CostMetric = ej:get({"meta","cost-type","cost-metric"},Costmap),
-			_ResourceId = << _CostMode/bitstring, _CostMetric/bitstring >>,
+			_NextId = resources:next_id(),
+			_ResourceId = << _NextId/binary, <<"_">>/binary, _CostMode/bitstring, _CostMetric/bitstring >>,
 			%% TODO - Look @ Resource Key in epcostservices and see if that needs to be here to 
 			%% avoid awkward collisions in naming
 			registry:updateResource(_ResourceId, _MapTag, costmap, Costmap, ApplicationState),

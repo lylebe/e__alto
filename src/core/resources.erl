@@ -21,6 +21,8 @@
 -module(resources).
 
 -export([
+	next_id/0,
+	next_id/1,
 	resource_to_record/4,
 	resource_to_record/7,
 	resource_to_EJSON/1,
@@ -29,6 +31,22 @@
 	]).
 	
 -include("e_alto.hrl").
+
+-spec default_source() -> binary().
+default_source() -> <<"local">>.
+
+-spec next_id( Source :: binary() ) -> integer().
+next_id(Source) when is_binary(Source) -> 
+	_ReturnVal = case e_alto_backend:get_constant(Source) of
+		not_found -> 0;
+		{_,_Val} -> _Val
+	end,
+	e_alto_backend:set_constant(Source,_ReturnVal+1),
+	_bval = integer_to_binary(_ReturnVal),
+	<< Source/binary, <<"_">>/binary, _bval/binary >>. 
+
+-spec next_id() -> integer().
+next_id() ->  next_id( default_source() ).
 
 -spec resource_to_record(Type :: atom(),
 						 Name :: binary(),
