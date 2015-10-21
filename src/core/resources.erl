@@ -50,7 +50,7 @@ next_id() ->  next_id( default_source() ).
 
 -spec resource_to_record(Type :: atom(),
 						 Name :: binary(),
-						 URI :: list(),
+						 URI :: binary(),
 						 MediaType :: list()) -> #resourceentry{}.
 resource_to_record(Type, Name, URI, MediaType)  when is_atom(type), is_binary(Name), is_binary(URI), is_list(MediaType) ->
 	#resourceentry{type=Type, name=Name, uri=URI, mediatype=MediaType}.
@@ -58,12 +58,15 @@ resource_to_record(Type, Name, URI, MediaType)  when is_atom(type), is_binary(Na
 -spec resource_to_record(Type :: atom(),
 						 Name :: binary(),
 						 URI :: binary(),
-						 MediaType :: list(),
-						 Accepts :: list(),
+						 MediaType :: binary(),
+						 Accepts :: binary(),
 						 Capabilities :: list(),
 						 Uses :: list()) -> #resourceentry{}.
+resource_to_record(Type, Name, URI, MediaType, undefined, Capabilities, Uses) when is_atom(type), is_binary(Name), is_binary(URI), is_binary
+(MediaType), is_list(Capabilities), is_list(Uses) ->
+	#resourceentry{ type=Type, name=Name, uri=URI, mediatype=MediaType, accepts=undefined, capabilities=Capabilities, uses=Uses };
 resource_to_record(Type, Name, URI, MediaType, Accepts, Capabilities, Uses) when is_atom(type), is_binary(Name), is_binary(URI), is_binary
-(MediaType), is_list(Accepts), is_list(Capabilities), is_list(Uses) ->
+(MediaType), is_binary(Accepts), is_list(Capabilities), is_list(Uses) ->
 	#resourceentry{ type=Type, name=Name, uri=URI, mediatype=MediaType, accepts=Accepts, capabilities=Capabilities, uses=Uses }.
 
 -spec resource_to_JSON(Resource :: #resourceentry{}) -> list().
@@ -73,7 +76,7 @@ resource_to_JSON(Resource) when is_record(Resource, resourceentry) ->
 -spec resource_to_EJSON(Resource :: #resourceentry{}) -> tuple().
 resource_to_EJSON(Resource) when is_record(Resource, resourceentry)  ->
 	%%Process optional attributes first!
-	_Accepts = gen_attr(<<"accepts">>, Resource#resourceentry.accepts, false ),
+	_Accepts = gen_attr(<<"accepts">>, Resource#resourceentry.accepts, false),
 	_Uses = gen_attr(<<"uses">>, Resource#resourceentry.uses, false),
 	_Capabilities = gen_attr(<<"capabilities">>, Resource#resourceentry.capabilities,true ),
 	_Attrs = [	{<<"uri">>, Resource#resourceentry.uri},
@@ -81,7 +84,14 @@ resource_to_EJSON(Resource) when is_record(Resource, resourceentry)  ->
 	X={Resource#resourceentry.name, {struct, _Attrs}},
 	lager:info("strucutre is ~p",[X]),
 	X.
-	
+
+gen_attr(Name,Value,AsStruct) when is_binary(Value) ->
+	case AsStruct of
+		false -> [ to_resource_attr({Name,Value}) ]; 
+		true -> [ {Name, {struct, to_resource_attr(Value) } }]
+	end;
+gen_attr(_,undefined,_) ->
+	[];
 gen_attr(Name,Value,AsStruct) ->
 	case length(Value) of
 		0 -> [];
