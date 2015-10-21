@@ -14,7 +14,7 @@
 "linklocal" : { "linklocal" : 0.0 },
 "loopback" : { "loopback" : 0.0 },
 "mine" : { "default": 60.0, "mine" : 0.0, "mine1" : 3.0, "mine1a" : 5.0, "mine2" : 4.0, "mine3" : 5.0, "peer1" : 20.0, "peer2" : 25.0, "tran1" : 35.0, "tran2" : 45.0 },
-"mine1" : { "default": 63.0, "mine" : 3.0, "mine1" : 0.0, "mine1a" : 2.0, "mine2" : 6.5, "mine3" : 8.0, "peer1" : 20.0, "peer2" : 25.0, "tran1" : 38.0, "tran2" : 48.0 },
+"mine1" : { "default": 63.0, "mine" : 3.0, "mine1" : 0.0, "mine1a" : 2.0, "mine2" : 6.5, "mine3" : 8.0, "peer1" : 23.0, "peer2" : 28.0, "tran1" : 38.0, "tran2" : 48.0 },
 "mine1a" : { "default" : 65.0, "mine" : 5.0, "mine1" : 2.0, "mine1a" : 0.0, "mine2" : 4.5, "mine3" : 10.0, "peer1" : 25.0, "peer2" : 30.0, "tran1" : 40.0, "tran2" : 50.0 },
 "mine2" : { "default" : 64.0, "mine" : 4.0, "mine1" : 7.0, "mine1a" : 9.0, "mine2" : 0.0, "mine3" : 9.0, "peer1" : 24.0, "peer2" : 29.0, "tran1" : 39.0, "tran2" : 49.0 },
 "mine3" : { "default" : 65.0, "mine" : 5.0, "mine1" : 8.0, "mine1a" : 10.0, "mine2" : 9.0, "mine3" : 0.0, "peer1" : 25.0, "peer2" : 30.0, "tran1" : 40.0, "tran2" : 50.0 },

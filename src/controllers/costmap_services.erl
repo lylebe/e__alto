@@ -36,8 +36,7 @@ allowed_methods(Req, State) ->
 
 content_types_provided(Req, State) ->
 	{[
-		{{<<"application">>, <<"alto-costmap+json">>, []}, handle_costmap_get},
-		{{<<"application">>, <<"alto-error+json">>, []}, handle_costmap_filter}
+		{{<<"application">>, <<"alto-costmap+json">>, []}, handle_costmap_get}
 	], Req, State}.
 
 content_types_accepted(Req, State) ->

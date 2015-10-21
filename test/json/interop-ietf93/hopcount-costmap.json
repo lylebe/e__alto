@@ -16,7 +16,7 @@
 "mine" : { "default": 3, "mine" : 0, "mine1" : 2, "mine1a" : 3, "mine2" : 2, "mine3" : 2, "peer1" : 3, "peer2" : 2, "tran1" : 4, "tran2" : 3 },
 "mine1" : { "default": 4, "mine" :2, "mine1" : 0, "mine1a" : 2, "mine2" : 3, "mine3" : 3, "peer1" : 4, "peer2" : 3, "tran1" : 5, "tran2" : 4 },
 "mine1a" : { "default" : 5, "mine" : 3, "mine1" : 2, "mine1a" : 0, "mine2" : 2, "mine3" : 4, "peer1" : 5, "peer2" : 4, "tran1" : 6, "tran2" : 5 },
-"mine2" : { "default" : 5, "mine" : 2, "mine1" : 3, "mine1a" : 4, "mine2" : 0, "mine3" : 3, "peer1" : 4, "peer2" : 3, "tran1" : 5, "tran2" : 4 },
+"mine2" : { "default" : 4, "mine" : 2, "mine1" : 3, "mine1a" : 4, "mine2" : 0, "mine3" : 3, "peer1" : 4, "peer2" : 3, "tran1" : 5, "tran2" : 4 },
 "mine3" : { "default" : 4, "mine" : 2, "mine1" : 3, "mine1a" : 4, "mine2" : 3, "mine3" : 0, "peer1" : 4, "peer2" : 3, "tran1" : 5, "tran2" : 4 },
 "peer1" : { "mine" : 3, "mine1" : 4, "mine1a" : 5, "mine2" : 4, "mine3" : 4, "peer1" : 0 },
 "peer2" : { "mine" : 2, "mine1" : 3, "mine1a" : 4, "mine2" : 3, "mine3" : 3, "peer2" : 0 },

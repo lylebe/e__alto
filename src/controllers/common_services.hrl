@@ -35,6 +35,7 @@ set_TextMessage(Code, Message,Req) ->
 
 handle_filter(FilterFunction,Req,State) ->
 	io:format("~p--Filter POST Received~n", [?MODULE]),
+	cowboy_debug:onrequest_hook(Req),
 	{_Path,_}=cowboy_req:path(Req),
 	io:format("~p--Path requested = ~p~n",[?MODULE,_Path]),
 	{ok, Body, _} = cowboy_req:body(Req),

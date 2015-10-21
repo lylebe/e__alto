@@ -34,8 +34,7 @@ allowed_methods(Req, State) ->
 
 content_types_provided(Req, State) ->
 	{[
-		{{<<"application">>, <<"alto-networkmap+json">>, []}, handle_map_get},
-  		{{<<"application">>, <<"alto-error+json">>, []}, handle_map_filter}
+		{{<<"application">>, <<"alto-networkmap+json">>, []}, handle_map_get}
 	], Req, State}.
 
 content_types_accepted(Req, State) ->
