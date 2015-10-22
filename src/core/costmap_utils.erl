@@ -327,11 +327,15 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 								_NetworkMapVersion = ej:get({"meta","dependent-vtags",1,"tag"},_Map),
 								{ _, Tries } = registry:get_resource(_NetworkMap,_NetworkMapVersion,["appstate"]),
 								{_X, _Y} = applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map",{topid,Tries}),
-								{ cleanResponse(_X,{struct,[]}), _Y }
+								_Z = case _X of
+									{struct,A} -> A;
+									_Val -> _Val
+								end,
+								{ cleanResponse(_Z,{struct,[]}), _Y }
 						end
 				end
-	end.
-	
+	end.	
+		
 cleanResponse([],AccIn) ->
 	AccIn;
 cleanResponse([{Src,{struct,List}} | T], AccIn) ->
@@ -417,7 +421,7 @@ filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses,{topid,Tries,OrigName
 		XlatedVal -> %The Dst translates to a PID 
 			{_Hits2,_Misses2} = case getValue(Prefix,RowName,XlatedVal,Map,false,Constraints) of
 				undefined -> { Hits, insertMiss(position,OrigName,H,Misses) };
-				Val ->  { [{H,Val}] ++ Hits, Misses }
+				Val -> { [{H,Val}] ++ Hits, Misses }
 			end
 	end,	
 	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses,Options);	

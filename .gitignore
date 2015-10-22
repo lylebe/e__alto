@@ -1,3 +1,5 @@
+_build/default/lib/e_alto/*
+_build/default/lib/e_alto/.rebar3/erlcinfo
 _build
 _build/
 rebar3

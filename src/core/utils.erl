@@ -220,7 +220,9 @@ invalid_eps(List) when is_list(List) ->
 valid_ep(EPAddress,_) when is_binary(EPAddress) ->
 	valid_ep(binary_to_list(EPAddress), nothing);
 valid_ep(EPAddress,_) when is_list(EPAddress) ->
-	[Type,Value] = string:tokens(EPAddress,":"),
+	_Pos = string:chr(EPAddress,$:),
+	Type = string:sub_string(EPAddress,1,_Pos-1),
+	Value = string:sub_string(EPAddress,_Pos+1),
 	case Type of 
 		"ipv4" -> valid_address(Value,ipv4);
 		"ipv6" -> valid_address(Value,ipv6);

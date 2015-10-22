@@ -1,0 +1,7 @@
+{
+"cost-type": {"cost-metric": "routingcost", "cost-mode": "numerical"}, 
+"endpoints": {
+  "dsts": ["ipv4:127.0.1.0"], 
+  "srcs": ["ipv4:127.0.0.1", "ipv6:::1"]
+}
+}

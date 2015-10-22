@@ -97,7 +97,9 @@ store_map(Path,_,JSON) ->
 getPidForAddress(Address,State) when is_binary(Address) ->
 	getPidForAddress(binary_to_list(Address), State);
 getPidForAddress(Address,{ V4ApplicationState, V6ApplicationState }) ->
-	[Type,Value] = string:tokens(Address,":"),
+	_Pos = string:chr(Address,$:),
+	Type = string:sub_string(Address,1,_Pos-1),
+	Value = string:sub_string(Address,_Pos+1),
 	BitStringValue = route_utils:as_bitstring(Value),
 	{ok, _, _RetValue} = case Type of 
 		"ipv4" -> trie:find_prefix_longest(BitStringValue,V4ApplicationState);
