@@ -1,0 +1,10 @@
+{
+"cost-type": {"cost-metric": "routingcost", "cost-mode": "numerical"}, 
+"endpoints": {
+  "dsts": [
+    "ipv4:100.0.0.100", "ipv4:100.8.1.100", "ipv4:100.0.1.100", "ipv4:100.64.0.100", "ipv4:100.128.4.100", 
+    "ipv4:130.0.1.100", "ipv4:132.0.8.100"
+  ], 
+  "srcs": ["ipv4:100.0.0.128", "ipv4:100.131.39.11"]
+}
+}
