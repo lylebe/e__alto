@@ -41,6 +41,10 @@ initialize() ->
 	application:load(e_alto),
 	e_alto_backend:init(),
 
+lager:info("autoprops register start",[]),
+	autogen_props:init(),
+	lager:info("autoprops registered",[]),
+
 	%% Add the Default Map and the IRD mapped to "/" as the initial routes.
 	_DefaultRouteList = [{ird,"/"}],
 	_ModulesToLoad = [ {map, fun mapservices:load_defaults/0}, 
@@ -54,6 +58,7 @@ initialize() ->
 						  end,
 						  _DefaultRouteList,
 						  _ModulesToLoad),
+
 	e_alto_backend:set_constant(<<"routelist">>, _Routes),
 	lager:info("Final Route List is ~p",[_Routes]).
 

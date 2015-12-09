@@ -36,3 +36,4 @@
 
 -record(costmetric, { name, mode, metric, description=undefined }). 
 -record(resourceentry, { name, type, uri, mediatype, accepts=undefined, capabilities=undefined, uses=[] }).
+-record(autogenprop, { identity, testcontext_fun, gen_fun, displayname, prereqs }).

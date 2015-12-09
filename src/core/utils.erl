@@ -368,6 +368,7 @@ apply_attribute_filter(Filter, BasePath, JSONObject,EmptyListIfClean) ->
 apply_attribute_filter1([], _, _, AccIn) ->
 	AccIn;
 apply_attribute_filter1([H|T], BasePath, JSONObject, AccIn) ->
+	%% Assert autofill attributes ...
 	case ej:get(BasePath ++ [H],JSONObject) of
 		undefined -> apply_attribute_filter1(T, BasePath, JSONObject, AccIn);
 		Value -> apply_attribute_filter1(T, BasePath, JSONObject, [{H,Value}] ++ AccIn )

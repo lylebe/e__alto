@@ -101,12 +101,15 @@ getPidForAddress(Address,{ V4ApplicationState, V6ApplicationState }) ->
 	Type = string:sub_string(Address,1,_Pos-1),
 	Value = string:sub_string(Address,_Pos+1),
 	BitStringValue = route_utils:as_bitstring(Value),
-	{ok, _, _RetValue} = case Type of 
+	_X = case Type of 
 		"ipv4" -> trie:find_prefix_longest(BitStringValue,V4ApplicationState);
 		"ipv6" -> trie:find_prefix_longest(BitStringValue,V6ApplicationState);
 		_ -> {ok, undefined, undefined }
 	end,
-	_RetValue.
+	case _X of
+		{ok, _, _RetValue} -> _RetValue;
+		_Other -> undefined
+	end.
 
 %%
 %% @doc Retrieves the current version of the default map

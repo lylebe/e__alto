@@ -111,7 +111,7 @@ find_ep(EP,ResourceKey,ResourcesList,PropFilter) ->
 		{_, JSON} ->
 			case ej:get({<<"endpoint-properties">>,EP},JSON) of
 				undefined -> nothing;
-				Value -> {utils:apply_attribute_filter(PropFilter,{EP, Value}), ej:get({<<"meta">>,<<"dependent-vtags">>}, JSON) }
+				Value -> {autogen_props:filter(PropFilter,{EP, Value}), ej:get({<<"meta">>,<<"dependent-vtags">>}, JSON) }
 			end
 	end.
 	

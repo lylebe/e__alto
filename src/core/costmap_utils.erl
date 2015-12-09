@@ -262,7 +262,7 @@ filter_Xcostmap(Path, InputParameters, PathPrefix, MapPrefix, ValidationFunction
 								"cost-map" -> costmap;
 								"endpoint-cost-map" -> epcostmap
 							end,							
-							{ _FinalResult, _ } = searchMaps(_Indices1,getSearchType(MapPrefix,Constraints),SearchMapType,[],
+							{ _FinalResult, _ } = searchMaps(_Indices1,getSearchType(MapPrefix,Constraints),SearchMapType,{struct,[ { list_to_binary(MapPrefix), {struct, []} } ]},
 								[ {ej:get({PathPrefix,"srcs"},Body), ej:get({PathPrefix,"dsts"},Body) } ], Constraints),
 	
 							_CostMap = registry:get_resource(_CostMapId),
@@ -312,13 +312,10 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 		true -> case registry:get_resource(ResourceId,Version) of
 					not_found -> { Hits, Misses };
 					_Map -> 
-						_MapPrefix = case MapType of 
-							costmap -> "cost-map";
-							epcostmap -> "endpoint-cost-map"
-						end,
+						{_Filters,_} = misses_to_filter(Misses,[],[]),
 						case { MapType, SearchMapType } of
-						    {costmap, costmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map",undefined);
-						    {epcostmap, epcostmap} -> applyFilters( Misses, Constraints, _Map, {Hits,[]}, "endpoint-cost-map",undefined);		
+						    {costmap, costmap} -> applyFilters( _Filters, Constraints, _Map, {Hits,[]}, <<"cost-map">>,undefined);
+						    {epcostmap, epcostmap} -> applyFilters( _Filters, Constraints, _Map, {Hits,[]}, <<"endpoint-cost-map">>,undefined);		
 							{epcostmap, costmap} -> %Not a valid search option
 								{Hits,Misses};
 							{costmap, epcostmap} -> 
@@ -326,28 +323,122 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 								_NetworkMap = ej:get({"meta","dependent-vtags",1,"resource-id"},_Map),
 								_NetworkMapVersion = ej:get({"meta","dependent-vtags",1,"tag"},_Map),
 								{ _, Tries } = registry:get_resource(_NetworkMap,_NetworkMapVersion,["appstate"]),
-								{_X, _Y} = applyFilters( Misses, Constraints, _Map, {Hits,[]}, "cost-map",{topid,Tries}),
-								_Z = case _X of
-									{struct,A} -> A;
-									_Val -> _Val
-								end,
-								{ cleanResponse(_Z,{struct,[]}), _Y }
+								applyFilters( _Filters, Constraints, _Map, {Hits,[]}, <<"cost-map">>,[{topid,Tries},{returnbase,<<"endpoint-cost-map">>}])
 						end
 				end
 	end.	
-		
-cleanResponse([],AccIn) ->
-	AccIn;
-cleanResponse([{Src,{struct,List}} | T], AccIn) ->
-	{_,NewAcc} = lists:foldl(fun x/2, {Src,AccIn}, List),
-	cleanResponse(T,NewAcc).
+	
+applyFilters([],_,_,{Hits,Misses},_,_) ->
+	full_report(["Filters applied in search - Returning",Hits,Misses]),
+	{Hits,Misses};
+applyFilters(List,Constraints,Map,{Hits,Misses},Prefix,Options) when is_binary(Prefix)->
+		applyFilters(List,Constraints,Map,{Hits,Misses},[Prefix],Options);
+applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix,Options) when is_list(Prefix)->
+	{ _Hits, _Misses } = filter2(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix,Options),
+	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix,Options).
 
-x({Dst,Val},{Src,AccIn}) ->
-	_R = case ej:get({Src},AccIn) of
-	  undefined -> ej:set({Src},AccIn,{struct,[{Dst,Val}]});
-	  _ -> ej:set({Src,Dst},AccIn,Val)
+sort_list(Structure, BasePath, undefined, _) ->
+	{ struct, _X } = ej:get(BasePath,Structure), 
+	{ lists:foldl(fun(E,AccIn) -> AccIn ++ [element(1,E)] end, [], _X), [] }; %TODO - The Options variable should be used
+sort_list(Structure, BasePath, List, Options) when is_tuple(BasePath) ->
+	sort_list(Structure, tuple_to_list(BasePath), List, Options); 
+sort_list(Structure, BasePath, List, undefined) ->
+	sort_list(Structure, BasePath, List, []); 
+sort_list(Structure, BasePath, List, Options) when is_list(BasePath), is_list(Options) ->
+	{ _, _, _Ins, _Outs, _ } = lists:foldl(
+		fun(E,{Path,Struct,Ins,Outs,_Options}) -> 
+			_X = case proplists:get_value(topid, _Options, undefined) of
+				undefined -> 
+				%lager:info("Data is ~p, ~p, ~p",[Path,E,Struct]),
+				ej:get(Path ++ [E], Struct);
+				Tries -> case mapservices:getPidForAddress(E,Tries) of
+						undefined -> undefined;
+						_MappedValue -> {_MappedValue, ej:get(Path ++ [_MappedValue], Struct)}
+					end
+			end,
+			case _X of
+				undefined -> {Path,Struct,Ins,Outs ++ [E],_Options};
+				{_MV, _MVal} -> case proplists:get_value(keepvalue,_Options,false) of
+						false -> {Path,Struct,Ins ++ [{mapped, E, _MV}],Outs,_Options};
+						true -> {Path,Struct,Ins ++ [{{mapped, E, _MV},_MVal}],Outs,_Options}
+					   end;
+				Val -> case proplists:get_value(keepvalue,_Options,false) of
+						false -> {Path,Struct,Ins ++ [E],Outs,_Options};
+						true -> {Path,Struct,Ins ++ [{E,Val}],Outs,_Options}
+					   end
+			end
+		end,
+		{ BasePath, Structure, [], [], Options },
+		List),
+	%lager:info("Sort complete with Results ~p and ~p",[_Ins,_Outs]),	
+	{_Ins, _Outs}.
+	
+filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) when is_tuple(Prefix) ->
+	filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},tuple_to_list(Prefix),Options);
+filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) -> 
+	{RowsPresent,RowsMissing} = sort_list(Map, Prefix, RowFilter, Options),
+	% Process the rows that are present and get their values
+	{_,_,_,FinalHits,FinalMisses,_,_} = lists:foldl(
+		fun(Row, {_ColumnFilter,_Constraints,_Map,_Hits,_Misses,_Prefix,_Options}) ->
+			% Get all of the values present in the map
+			lager:info("Processing Hits of ",[_Hits]),
+			{ _RowVal, _RowReturnBase } = case Row of
+				{mapped, SrcRow, MappedRow} -> { MappedRow, SrcRow };
+				NonMappedRow -> { NonMappedRow, NonMappedRow }
+			end,
+			{ ValuesPresent, ColumnsNotPresent } = sort_list(_Map, _Prefix ++ [_RowVal], _ColumnFilter, Options ++ [keepvalue]),
+			% Test those values against the Criteria, if they pass then 
+			% add them to the return structure
+			_ReturnBase = case proplists:get_value(returnbase, Options, undefined) of
+				undefined -> [_Prefix];
+				Val -> [Val]
+			end,
+			{ _, _QueryHits, ConstraintMisses, _ } = lists:foldl(
+				fun(E,{_Constraints_, _Hits_, _Misses_, _EJPath}) -> 
+					lager:info("Point Value is ~p~n Path is ~p~n Struct is ~p~n ",[E,_EJPath,_Hits_]),
+					case E of
+						{{mapped, _X, _Y}, _Val1} -> case meets_criteria(_Constraints_,_Val1) of
+								true -> {_Constraints_, ej:set_p(_EJPath ++ [_X],_Hits_, _Val1), _Misses_, _EJPath };
+								false -> {_Constraints_, _Hits_, [E] ++ _Misses_, _EJPath }
+							end;
+						{_Col,_Val2} -> case meets_criteria(_Constraints_,_Val2) of
+							true ->  {_Constraints_, ej:set_p(_EJPath ++ [_Col],_Hits_, _Val2), _Misses_, _EJPath };
+							false -> {_Constraints_, _Hits_, [E] ++ _Misses_ ,_EJPath}
+							end
+					end
+				end,
+				{ _Constraints, _Hits, [], _ReturnBase ++ [_RowReturnBase] },
+				ValuesPresent),
+			% Post process other return values
+			_Var2 = case length(ColumnsNotPresent) of
+			 0 -> [];
+			 _ -> [{missing_columns, Row, ColumnsNotPresent}]
+			end,
+			_Var3 = case length(ConstraintMisses) of
+			 0 -> [];
+			 _ -> [{criteria_unmet, [Row], ConstraintMisses}]
+			end,			
+			{_ColumnFilter,_Constraints,_Map,_QueryHits, _Var2 ++ _Var3 ++ _Misses, _Prefix, _Options}
+		end,
+		{ColumnFilter,Constraints,Map,Hits,Misses,Prefix,Options},
+		RowsPresent
+	),
+	_FinalMisses = case length(RowsMissing) of
+		0 -> FinalMisses;
+		_ -> [{ missing_rows, RowsMissing, ColumnFilter }] ++ FinalMisses
 	end,
-	{Src,_R}.
+	{ FinalHits, _FinalMisses }.
+
+misses_to_filter([],StuffICanFilter,StuffICant) ->
+	{StuffICanFilter,StuffICant};
+misses_to_filter([H|T],StuffICanFilter,StuffICant) ->
+	{ _NewValue1, _NewValue2 } = case H of 
+		{ criteria_unmet, _ , _ } -> { StuffICanFilter, [H] ++ StuffICant };
+		{ missing_columns, Row, Columns } -> { [{ [Row], Columns }] ++ StuffICanFilter, StuffICant };
+		{ missing_rows, Rows, ColumnFilter } -> { [{ Rows, ColumnFilter }] ++ StuffICanFilter, StuffICant };
+		{ SrcFilter, DstFilter } -> { [{ SrcFilter, DstFilter }] ++ StuffICanFilter, StuffICant }
+	end,
+	misses_to_filter(T,_NewValue1,_NewValue2).
 
 %% Tech Debt $4 We need to better organize these in lists so they don't get so bloated on the server.
 insertMiss(row,Src,_,Misses) ->
@@ -356,13 +447,6 @@ insertMiss(column,_,Dst,Misses) ->
 	[ { undefined, [Dst] } ] ++ Misses;
 insertMiss(_,Src,Dst,Misses) ->
 	[ { [Src], [Dst] } ] ++ Misses.
-
-applyFilters([],_,_,{Hits,Misses},_,_) ->
-	full_report(["Returning",Hits,Misses]),
-	{Hits,Misses};
-applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix,Options) ->
-	{ _Hits, _Misses } = filter(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix,Options),
-	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix,Options).
 
 filter([],_,_,_,ReturnValue,_,_) ->
 	ReturnValue;
