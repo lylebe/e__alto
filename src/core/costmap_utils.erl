@@ -312,6 +312,7 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 		true -> case registry:get_resource(ResourceId,Version) of
 					not_found -> { Hits, Misses };
 					_Map -> 
+						%NOTE - This is where criteria unmet is dropped from filter lists
 						{_Filters,_} = misses_to_filter(Misses,[],[]),
 						case { MapType, SearchMapType } of
 						    {costmap, costmap} -> applyFilters( _Filters, Constraints, _Map, {Hits,[]}, <<"cost-map">>,undefined);
@@ -328,8 +329,9 @@ searchMaps1({MapType,Granularity,ResourceId,Version,_},SearchType,SearchMapType,
 				end
 	end.	
 	
+applyFilters(A,B,C,D,E,undefined) -> 
+	applyFilters(A,B,C,D,E,[]);
 applyFilters([],_,_,{Hits,Misses},_,_) ->
-	full_report(["Filters applied in search - Returning",Hits,Misses]),
 	{Hits,Misses};
 applyFilters(List,Constraints,Map,{Hits,Misses},Prefix,Options) when is_binary(Prefix)->
 		applyFilters(List,Constraints,Map,{Hits,Misses},[Prefix],Options);
@@ -337,9 +339,16 @@ applyFilters([{SrcFilter,DstFilter}|T],Constraints,Map,{Hits,Misses},Prefix,Opti
 	{ _Hits, _Misses } = filter2(SrcFilter,DstFilter,Constraints,Map,{Hits,Misses},Prefix,Options),
 	applyFilters(T,Constraints,Map,{_Hits,_Misses},Prefix,Options).
 
-sort_list(Structure, BasePath, undefined, _) ->
+sort_list(Structure, BasePath, undefined, Options) ->
 	{ struct, _X } = ej:get(BasePath,Structure), 
-	{ lists:foldl(fun(E,AccIn) -> AccIn ++ [element(1,E)] end, [], _X), [] }; %TODO - The Options variable should be used
+	{ lists:foldl(fun(E,{AccIn,_Options}) -> case proplists:get_value(keepvalue,_Options,false) of
+						false -> {AccIn ++ [element(1,E)],_Options};
+						true -> {AccIn ++ [E],_Options}
+					   end
+					  end,
+					  { [], Options },
+					  _X),
+		[] };
 sort_list(Structure, BasePath, List, Options) when is_tuple(BasePath) ->
 	sort_list(Structure, tuple_to_list(BasePath), List, Options); 
 sort_list(Structure, BasePath, List, undefined) ->
@@ -348,17 +357,15 @@ sort_list(Structure, BasePath, List, Options) when is_list(BasePath), is_list(Op
 	{ _, _, _Ins, _Outs, _ } = lists:foldl(
 		fun(E,{Path,Struct,Ins,Outs,_Options}) -> 
 			_X = case proplists:get_value(topid, _Options, undefined) of
-				undefined -> 
-				%lager:info("Data is ~p, ~p, ~p",[Path,E,Struct]),
-				ej:get(Path ++ [E], Struct);
+				undefined -> ej:get(Path ++ [E], Struct);
 				Tries -> case mapservices:getPidForAddress(E,Tries) of
 						undefined -> undefined;
-						_MappedValue -> {_MappedValue, ej:get(Path ++ [_MappedValue], Struct)}
+						_MappedValue -> {mapped, _MappedValue, ej:get(Path ++ [_MappedValue], Struct)}
 					end
 			end,
 			case _X of
 				undefined -> {Path,Struct,Ins,Outs ++ [E],_Options};
-				{_MV, _MVal} -> case proplists:get_value(keepvalue,_Options,false) of
+				{mapped, _MV, _MVal} -> case proplists:get_value(keepvalue,_Options,false) of
 						false -> {Path,Struct,Ins ++ [{mapped, E, _MV}],Outs,_Options};
 						true -> {Path,Struct,Ins ++ [{{mapped, E, _MV},_MVal}],Outs,_Options}
 					   end;
@@ -370,7 +377,6 @@ sort_list(Structure, BasePath, List, Options) when is_list(BasePath), is_list(Op
 		end,
 		{ BasePath, Structure, [], [], Options },
 		List),
-	%lager:info("Sort complete with Results ~p and ~p",[_Ins,_Outs]),	
 	{_Ins, _Outs}.
 	
 filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) when is_tuple(Prefix) ->
@@ -381,7 +387,6 @@ filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) ->
 	{_,_,_,FinalHits,FinalMisses,_,_} = lists:foldl(
 		fun(Row, {_ColumnFilter,_Constraints,_Map,_Hits,_Misses,_Prefix,_Options}) ->
 			% Get all of the values present in the map
-			lager:info("Processing Hits of ",[_Hits]),
 			{ _RowVal, _RowReturnBase } = case Row of
 				{mapped, SrcRow, MappedRow} -> { MappedRow, SrcRow };
 				NonMappedRow -> { NonMappedRow, NonMappedRow }
@@ -395,7 +400,6 @@ filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) ->
 			end,
 			{ _, _QueryHits, ConstraintMisses, _ } = lists:foldl(
 				fun(E,{_Constraints_, _Hits_, _Misses_, _EJPath}) -> 
-					lager:info("Point Value is ~p~n Path is ~p~n Struct is ~p~n ",[E,_EJPath,_Hits_]),
 					case E of
 						{{mapped, _X, _Y}, _Val1} -> case meets_criteria(_Constraints_,_Val1) of
 								true -> {_Constraints_, ej:set_p(_EJPath ++ [_X],_Hits_, _Val1), _Misses_, _EJPath };
@@ -416,7 +420,7 @@ filter2(RowFilter,ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) ->
 			end,
 			_Var3 = case length(ConstraintMisses) of
 			 0 -> [];
-			 _ -> [{criteria_unmet, [Row], ConstraintMisses}]
+			 _ -> [{criteria_unmet, Row, ConstraintMisses}]
 			end,			
 			{_ColumnFilter,_Constraints,_Map,_QueryHits, _Var2 ++ _Var3 ++ _Misses, _Prefix, _Options}
 		end,
@@ -433,122 +437,30 @@ misses_to_filter([],StuffICanFilter,StuffICant) ->
 	{StuffICanFilter,StuffICant};
 misses_to_filter([H|T],StuffICanFilter,StuffICant) ->
 	{ _NewValue1, _NewValue2 } = case H of 
+		% What should I do here in the spirit of ALTO?
 		{ criteria_unmet, _ , _ } -> { StuffICanFilter, [H] ++ StuffICant };
-		{ missing_columns, Row, Columns } -> { [{ [Row], Columns }] ++ StuffICanFilter, StuffICant };
-		{ missing_rows, Rows, ColumnFilter } -> { [{ Rows, ColumnFilter }] ++ StuffICanFilter, StuffICant };
-		{ SrcFilter, DstFilter } -> { [{ SrcFilter, DstFilter }] ++ StuffICanFilter, StuffICant }
+		{ missing_columns, Row, Columns } -> { [{ [valuesToFilter(Row)], valuesToFilter(Columns) }] ++ StuffICanFilter, StuffICant };
+		{ missing_rows, Rows, ColumnFilter } ->
+			{ [{ valuesToFilter(Rows), ColumnFilter }] ++ StuffICanFilter, StuffICant };
+		{ SrcFilter, DstFilter } -> 
+			{ [{ SrcFilter, DstFilter }] ++ StuffICanFilter, StuffICant }
 	end,
 	misses_to_filter(T,_NewValue1,_NewValue2).
 
-%% Tech Debt $4 We need to better organize these in lists so they don't get so bloated on the server.
-insertMiss(row,Src,_,Misses) ->
-	[ { [Src], undefined } ] ++ Misses;
-insertMiss(column,_,Dst,Misses) ->
-	[ { undefined, [Dst] } ] ++ Misses;
-insertMiss(_,Src,Dst,Misses) ->
-	[ { [Src], [Dst] } ] ++ Misses.
+valuesToFilter(Values) when is_list(Values) ->
+	lists:foldl(fun(E,AccIn)->[valueToFilter(E)]++AccIn end, [], Values);
+valuesToFilter(Values) ->
+	valueToFilter(Values).
 
-filter([],_,_,_,ReturnValue,_,_) ->
-	ReturnValue;
-filter(_,undefined,_,_,{Hits,Misses},_,{topid,_}) ->
-	{Hits,Misses};
-filter([H|T],undefined,Constraints,Map,{Hits,Misses},Prefix,_) ->
-	{_Hits,_Misses} = case applyConstraints(Prefix,H,Constraints,Map,[],[]) of
-		{[], _ } -> {Hits, insertMiss(row,H,undefined,Misses) };
-		{_Hits2, _Misses2} -> {Hits ++ _Hits2, Misses ++ _Misses2}
-	end,
-	filter(T,undefined,Constraints,Map,{_Hits,_Misses},Prefix,undefined);
-filter(undefined,ColumnFilter,Constraints,Map,ReturnValue,Prefix,Options) ->
-	filter(getRowNames(Prefix,Map),ColumnFilter,Constraints,Map,ReturnValue,Prefix,Options);
-filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,{topid,Tries}) ->
-	{_Hits,_Misses} = case mapservices:getPidForAddress(H,Tries) of
-		undefined -> {Hits,[{[H],ColumnFilter}] ++ Misses};
-		Val -> %The Src translates to a PID 
-			{_Hits2,_Misses2} = filterRow(Prefix,Val,ColumnFilter,Constraints,Map,[],Misses,{topid,Tries,H}),
-			_NewHits = case length(_Hits2) of
-				 0 -> Hits;
-				 _ -> [{H,{struct,_Hits2}}] ++ Hits
-			end,
-			{ _NewHits, _Misses2 }
-	end,
-	filter(T,ColumnFilter,Constraints,Map,{_Hits,_Misses},Prefix,{topid,Tries});
-filter([H|T],ColumnFilter,Constraints,Map,{Hits,Misses},Prefix,Options) ->
-	{_Hits,_Misses} = filterRow(Prefix,H,ColumnFilter,Constraints,Map,[],Misses,Options),
-	_NewHits = case length(_Hits) of
-	 0 -> Hits;
-	 _ -> [{H,{struct,_Hits}}] ++ Hits
-	end,
-	filter(T,ColumnFilter,Constraints,Map,{ _NewHits,_Misses},Prefix,Options).
-
-applyConstraints(Prefix,RowName,Constraints,Map,Hits,Misses) ->
-	{_, R1} = case ej:get({Prefix,RowName},Map) of
-		undefined -> { undefined, Hits, [{row,RowName}] ++ Misses };
-		{struct, Value} -> lists:foldl(fun({_,Val}=E,{_Constraints, _Hits}) -> 
-								case meets_criteria(_Constraints,Val) of
-								 true -> {_Constraints, [E] ++ _Hits };
-								 false -> {_Constraints, _Hits }
-								end
-							 end,
-							 { Constraints, [] },
-							 Value)
-	end,
-	case length(R1) of
-	 0 -> { Hits, Misses };
-	 _ -> { [{RowName,{struct, R1}}] ++ Hits, Misses}
-	end.							
-
-filterRow(_,_,[],_,_,Hits,Misses,_) ->
-	{Hits,Misses};
-filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses,{topid,Tries,OrigName}=Options) ->
-	{_Hits,_Misses} = case mapservices:getPidForAddress(H,Tries) of
-		undefined -> {Hits, insertMiss(position,OrigName,H,Misses)};
-		XlatedVal -> %The Dst translates to a PID 
-			{_Hits2,_Misses2} = case getValue(Prefix,RowName,XlatedVal,Map,false,Constraints) of
-				undefined -> { Hits, insertMiss(position,OrigName,H,Misses) };
-				Val -> { [{H,Val}] ++ Hits, Misses }
-			end
-	end,	
-	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses,Options);	
-filterRow(Prefix,RowName,[H|T],Constraints,Map,Hits,Misses,Options) ->
-	{_Hits,_Misses} = case getValue(Prefix,RowName,H,Map,false,Constraints) of
-		undefined -> { Hits, insertMiss(position,RowName,H,Misses) };
-		Val ->  { [{H,Val}] ++ Hits, Misses }
-	end,
-	filterRow(Prefix,RowName,T,Constraints,Map,_Hits,_Misses,Options).
-
-getRow(MapPrefix,Map,Row) ->
-	ej:get({MapPrefix,Row},Map).
-	
-getRowNames(MapPrefix,Map) ->
-	case ej:get({MapPrefix},Map) of
+valueToFilter(Value) ->
+	case Value of 
 		undefined -> [];
-		{struct, List} -> lists:foldl(fun({_RowName,_},AccIn) -> [_RowName] ++ AccIn end, [], List)
-	end. 
-
-getValue(MapPrefix,Src,Dst) ->
-	getValue(MapPrefix,Src,Dst,false).
-
-getValue(MapPrefix,Src,Dst,Criteria) ->
-	getValue(MapPrefix,Src,Dst,false,Criteria).
-
-getValue(MapPrefix,Src,Dst,Map,CanSwitch) ->
-	case ej:get({MapPrefix,Src,Dst},Map) of
-		undefined -> case CanSwitch of 
-				true -> getValue(MapPrefix,Dst,Src,Map,false);
-				false -> undefined
-			end;
-		Value -> Value
+		{{mapped, _Key1, _}, _} -> _Key1;
+		{_Key2, _} -> _Key2;
+		{mapped, _Key3, _} -> _Key3;
+		_Val -> _Val
 	end.
-	
-getValue(MapPrefix,Src,Dst,Map,CanSwitch,Criteria) ->
-	_Val = getValue(MapPrefix,Src,Dst,Map,CanSwitch),
-	%%lager:info("Executing Criteria with src=~p, dst=~p and prefix=~p with Criteria=~p",[Src,Dst,MapPrefix,Criteria]),
-	%%lager:info("Got a VALUE of ~p with map ~p",[_Val,Map]),
-	case meets_criteria(Criteria, _Val) of
-		true -> _Val;
-		false -> undefined
-	end.
-	
+		
 meets_criteria(_, undefined) ->
 	false;
 meets_criteria([], _) ->
