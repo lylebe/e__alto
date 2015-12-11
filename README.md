@@ -15,7 +15,6 @@ Funtcionality that has been tested
 
 TODO
 - Set up and pass the ALTO 93 interop tests.
-- Automatically start the Server.
 
 * - notes an exception to the standard
 
@@ -37,14 +36,14 @@ Quick Start -
 
 	e_alto$ ./start.sh
 
-2. At the erlang console start the server (the script will be fixed 
-later).
+2. Stopping server
 
-	1> e_alto:start().
+	(e_alto@localhost) 1> e_alto_app:shutdown().
+	
+NOTE - Depending upon OS, erlang release, etc. you may need to halt the 
+shell 
+
+	(e_alto@localhost) 2> halt().
 
 The IRD URI (by default) is http://localhost:8080/ 
 and specified in app.config
-
-KNOWN ISSUES/LIMITATIONS
-------------------------
-1. Manual start from console. 

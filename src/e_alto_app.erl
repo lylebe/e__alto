@@ -84,11 +84,16 @@ start(_StartType, _StartArgs) ->
     {ok, Pid}.
 
 shutdown() -> 
-	stop(shutdown),
-	exit(normal).
+	try
+		stop(shutdown)
+	after 
+		init:stop()
+	end,
+	ok.
 
 stop(_State) ->
-	application:stop(cowboy),
+	AppList1 = [ cowboy, cowlib, ranch, crypto, lager, goldrush ],
+	lists:foreach(fun application:stop/1, AppList1),
     ok.
 
 add_route(AppType,Route) ->
