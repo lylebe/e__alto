@@ -36,10 +36,10 @@ Quick Start -
 
 	e_alto$ ./start.sh
 
-2. Stopping server
+2. Stopping server 
 
 	(e_alto@localhost) 1> e_alto_app:shutdown().
-	
+
 NOTE - Depending upon OS, erlang release, etc. you may need to halt the 
 shell 
 
